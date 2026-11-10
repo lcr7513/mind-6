@@ -1,4 +1,5 @@
 import { Student, RoadmapMilestone, InquiryActivityRecord, TeacherFeedback } from '../types';
+import { fifteenCurriculumDatabase } from './fifteenCurriculumDatabase';
 
 interface DomainProfile {
   isMarketingOrBiz: boolean;
@@ -45,6 +46,22 @@ export function detectStudentDomain(student: Student): DomainProfile {
 
 // 1. Generate 10-milestone Tailored 3-Year Career Roadmap based on student's profile across all 5 semesters and 4 areas
 export function generateTailoredRoadmap(student: Student): RoadmapMilestone[] {
+  const primaryContext = `${student.mainInterestTopic || ''} ${student.targetCareer || ''} ${student.targetMajor || ''} ${(student.interestKeywords || []).join(' ')}`.toLowerCase();
+  const matchedFifteen = fifteenCurriculumDatabase.find((d) => d.detect(primaryContext));
+  if (matchedFifteen) {
+    return matchedFifteen.milestones.map((m, idx) => ({
+      id: `road-${student.id}-${idx + 1}`,
+      gradeSemester: m.gradeSemester as any,
+      stage: m.stage === '전공 심화기' ? ('심화 탐구기' as any) : (m.stage as any),
+      category: m.category,
+      title: m.title,
+      description: m.description,
+      status: idx < 4 ? 'completed' : idx < 7 ? 'in_progress' : 'planned',
+      keyCompetency: m.keyCompetency,
+      linkedSubject: m.linkedSubject,
+    }));
+  }
+
   const domain = detectStudentDomain(student);
   const cleanInterest = student.mainInterestTopic || '교과 연계 첨단 기술 쟁점';
   const targetCareer = student.targetCareer || '전문 연구원';
@@ -972,6 +989,35 @@ export function generateTailoredRoadmap(student: Student): RoadmapMilestone[] {
 
 // 2. Generate 3 Comprehensive Tailored Inquiry Activity Records based on student's profile
 export function generateTailoredInquiryRecords(student: Student): InquiryActivityRecord[] {
+  const primaryContext = `${student.mainInterestTopic || ''} ${student.targetCareer || ''} ${student.targetMajor || ''} ${(student.interestKeywords || []).join(' ')}`.toLowerCase();
+  const matchedFifteen = fifteenCurriculumDatabase.find((d) => d.detect(primaryContext));
+  if (matchedFifteen) {
+    return matchedFifteen.activityRecords.map((a, idx) => ({
+      id: `act-${student.id}-${idx + 1}`,
+      studentId: student.id,
+      title: a.title,
+      subject: a.subject,
+      category: '교과세특',
+      gradeSemester: idx === 0 ? '1학년 1학기' : idx === 1 ? '2학년 1학기' : '3학년 1학기',
+      date: idx === 0 ? '2026-04-20' : idx === 1 ? '2026-06-15' : '2026-10-18',
+      motivation: a.motivation,
+      process: a.content,
+      insights: a.reflection,
+      relatedBooks: '관련 전공 학술 필독서 및 학술지',
+      deliverables: `${a.title.slice(0, 20)} 심층 탐구 보고서 (A4 5매)`,
+      status: 'reviewed',
+      teacherFeedback: {
+        author: '진로진학부 지도교사',
+        date: idx === 0 ? '2026-04-25' : idx === 1 ? '2026-06-20' : '2026-10-25',
+        academicCompetency: a.teacherPoints,
+        careerCompetency: `${matchedFifteen.name} 전공 적합성과 문제해결력을 고교 교육과정 수준 이상으로 발휘함.`,
+        communityCompetency: '탐구 결과를 학급 및 동아리 구성원과 적극 공유하고 학술 토론을 주도함.',
+        coachingAdvice: '후속 학기에는 관련 심화 교과 및 대학 기초 전공 서적과 연계하여 융합 탐구로 심화 발전시켜 보세요.',
+        draftRecord: a.teacherPoints,
+      },
+    }));
+  }
+
   const domain = detectStudentDomain(student);
   const cleanInterest = student.mainInterestTopic || '교과 연계 첨단 기술 쟁점';
   const targetCareer = student.targetCareer || '전문 연구원';

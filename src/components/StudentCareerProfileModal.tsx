@@ -83,21 +83,39 @@ export const StudentCareerProfileModal: React.FC<StudentCareerProfileModalProps>
   if (!isOpen) return null;
 
   const quickCareerPresets = [
-    { career: '바이오 신약 개발자 / 유전자 치료제 연구원', major: '생명공학과 / 바이오시스템공학' },
-    { career: 'AI 시스템 아키텍트 / 머신러닝 연구원', major: '컴퓨터공학과 / 인공지능융합' },
-    { career: '전기차·이차전지 배터리 소재 엔지니어', major: '신소재공학과 / 화학공학과' },
-    { career: 'ESG 정책 연구원 / 탄소중립 배출권 거래 전문가', major: '환경경제학과 / 공공정책학' },
-    { career: '빅데이터 기반 핀테크 알고리즘 개발자', major: '금융공학과 / 응용통계학과' },
-    { career: '로봇 제어 소프트웨어 & 생체공학 연구원', major: '기계공학과 / 의공학과' },
+    { label: '간호·보건의료', career: '전문 간호사 / 감염관리전문가', major: '간호학과 / 보건관리학과' },
+    { label: '의예·치의예', career: '외과 전문의 / 임상의과학자', major: '의예과 / 의학과' },
+    { label: '약학·생명공학', career: '바이오 신약 개발자 / 연구약사', major: '약학과 / 생명공학과' },
+    { label: '기계·로봇·모빌리티', career: '로봇 제어 공학자 / 자율주행 엔지니어', major: '기계공학과 / 로봇공학과' },
+    { label: '전기전자·반도체', career: '시스템반도체 회로설계사 / 칩 아키텍트', major: '전기전자공학과 / 반도체공학과' },
+    { label: '컴퓨터공학·AI', career: 'AI 시스템 연구원 / 소프트웨어 엔지니어', major: '컴퓨터공학과 / 인공지능학과' },
+    { label: '화학공학·이차전지', career: '차세대 배터리 소재 연구원 / 화공 엔지니어', major: '화학공학과 / 신소재공학과' },
+    { label: '건축·도시·공간', career: '친환경 패시브 건축가 / 스마트시티 플래너', major: '건축학과 / 도시공학과' },
+    { label: '환경공학·기후기술', career: '탄소중립 기술 연구원 / 환경영향평가사', major: '환경공학과 / 지구환경과학과' },
+    { label: '경영·마케팅', career: '데이터 마케팅 디렉터 / 스타트업 창업가', major: '경영학과 / 글로벌경영' },
+    { label: '경제·금융·핀테크', career: '금융공학 퀀트 애널리스트 / 핀테크 개발자', major: '경제학과 / 금융공학과' },
+    { label: '미디어·커뮤니케이션', career: '탐사보도 저널리스트 / 콘텐츠 디렉터', major: '미디어커뮤니케이션학과 / 신문방송' },
+    { label: '심리·인지과학·뇌과학', career: '인지과학 연구원 / 임상심리전문가', major: '심리학과 / 뇌인지과학과' },
+    { label: '사범대·교육학·에듀테크', career: '중등 교과 정교사 / 에듀테크 학습설계자', major: '사범대학 교육학과 / 국어·수학교육' },
+    { label: '법학·행정·공공정책', career: '공공인재 / 로스쿨 법률전문가 / 외교관', major: '법학과 / 행정학과 / 공공정책학' },
   ];
 
   const quickInterestThemes = [
-    '크리스퍼 유전자 가위의 오프타깃 부작용 극복과 난치병 치료 메커니즘',
-    '대규모 언어 모델(LLM)의 환각 저감과 알고리즘 시간복잡도 최적화',
-    '차세대 전고체 배터리의 열역학적 쿨롱 효율과 화재 안정성 모델링',
-    '탄소배출권 거래제 시장 실패 방지와 피구세 최적 세율 분석',
-    '자율주행 자동차의 트롤리 딜레마와 탑승자·보행자 보호 확률 모델링',
-    '미세플라스틱 해양 오염을 분해하는 고효율 재조합 효소 발현 메커니즘',
+    '지수함수 감쇄 모델을 활용한 정맥 주사 약물 체내 잔존 농도 및 감염관리 프로토콜',
+    '심전도 삼각함수 파형 모델링 및 암세포 표적 면역관문억제제 분자 메커니즘',
+    '미카엘리스-멘텐 효소 반응속도론 및 mRNA 지질나노입자(LNP) 약물전달체',
+    '로봇 머니퓰레이터 역기구학 좌표 변환 및 자율주행 PID 모터 제어',
+    'RLC 공진 회로 임피던스 및 MOSFET 에너지 밴드갭 나노 스위칭',
+    '이진 탐색 시간복잡도 로그 분석 및 트랜스포머 어텐션 자연어 딥러닝',
+    '아레니우스 반응속도론 및 전고체 배터리 리튬 이온 확산 계면 열역학',
+    '트러스 구조 인장력 평형 벡터 역학 및 15분 도시 보행 유니버설 디자인',
+    'Lotka-Volterra 생태계 연립 미분방정식 및 탄소국경조정제도(CBAM) 분석',
+    '손익분기점(BEP) 연립방정식 및 A/B 테스트 가설검정 기반 이커머스 최적화',
+    '무차별곡선 한계대체율 미적분 및 몬테카를로 자산배분 포트폴리오',
+    '소셜 미디어 바이럴 확산 지수함수 및 딥페이크 위변조 탐지 저널리즘',
+    '베버-페히너 로그 지각 법칙 및 fMRI BOLD 신호 신경가소성 분석',
+    '문항반응이론(IRT) 로지스틱 수리 및 망각 곡선 미적분 기반 적응형 학습',
+    '헌법 과잉금지원칙 4단계 판례 분석 및 법률 자연어 처리(Legal NLP) 연구',
   ];
 
   const availableSubjectsList = [
@@ -296,8 +314,13 @@ export const StudentCareerProfileModal: React.FC<StudentCareerProfileModalProps>
                       setTargetCareer(preset.career);
                       setTargetMajor(preset.major);
                     }}
-                    className="text-left p-2.5 bg-white hover:bg-indigo-50/70 hover:border-indigo-300 border border-slate-200 rounded-xl text-xs transition-all"
+                    className="text-left p-2.5 bg-white hover:bg-indigo-50/70 hover:border-indigo-300 border border-slate-200 rounded-xl text-xs transition-all shadow-2xs"
                   >
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-md">
+                        {preset.label}
+                      </span>
+                    </div>
                     <strong className="block text-slate-900 truncate">{preset.career}</strong>
                     <span className="text-[11px] text-indigo-600 truncate block">
                       {preset.major}

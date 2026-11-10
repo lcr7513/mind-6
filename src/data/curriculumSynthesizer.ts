@@ -1,4 +1,5 @@
 import type { MindMapNode, SubjectCategory, SubjectInquiryTopic, InquiryLevel } from '../types/index.ts';
+import { fifteenCurriculumDatabase } from './fifteenCurriculumDatabase.ts';
 
 export interface ComprehensiveSubjectPlan {
   id?: string;
@@ -39,14 +40,15 @@ export function detectDomainProfiles(text: string) {
   const lower = text.toLowerCase();
 
   return {
+    isMarketingOrBiz: /마케팅|광고|홍보|브랜드|소비자|커머스|이커머스|경영|비즈니스|세일즈|유통|기획|스타트업|창업|시장조사|고객|컨설팅|ctr|전환율|구매|소비/i.test(lower),
     isGeographyOrUrban: /지역|도시|공간|지리|불평등|인구소멸|소멸|도시계획|행정|지방|인프라|국토|교통|정주|소외|주거|슬럼|젠트리피케이션|국토교통|생활권|거점/i.test(lower),
     isBio: /생명|바이오|유전자|crispr|크리스퍼|의약|단백질|세포|의예|약학|간호|면역|치료|dna|rna|질환|뇌|신경|효소/i.test(lower),
-    isAi: /ai|인공지능|컴퓨터|소프트웨어|알고리즘|머신러닝|딥러닝|빅데이터|코딩|데이터|언어모델|llm|트랜스포머|로봇/i.test(lower),
     isBatteryOrSemiconductor: /배터리|이차전지|전고체|반도체|리소그래피|양자|소재|신소재|나노|물성|회로|집적/i.test(lower),
+    isPhysicsOrAero: /항공|우주|로봇|기계|위성|발사체|드론|유체역학|공기역학|메카트로닉스/i.test(lower),
+    isAi: /ai|인공지능|컴퓨터|소프트웨어|알고리즘|머신러닝|딥러닝|빅데이터|코딩|데이터|언어모델|llm|트랜스포머/i.test(lower),
     isEnvOrClimate: /환경|기후|탄소|생태|신재생|esg|지구|오염|미세플라스틱|배출권|피구세|해양|대기|생물다양성/i.test(lower),
-    isEconOrBiz: /경제|경영|금융|시장|핀테크|무역|소비자|가격|게임이론|행동경제|넛지|화폐|인플레이션|주식|투자/i.test(lower),
+    isEconOrBiz: /경제|금융|시장|핀테크|무역|가격|게임이론|행동경제|넛지|화폐|인플레이션|주식|투자/i.test(lower),
     isLawOrPolitics: /법|정치|사회|정의|윤리|인권|헌법|규제|공공|거버넌스|민주주의|복지|행정|조례|롤스/i.test(lower),
-    isPhysicsOrAero: /물리|우주|항공|역학|전자기|광학|상대성|유체|열역학|인공위성|발사체/i.test(lower),
     isPsychOrEdu: /심리|인지|교육|학습|기억|뇌과학|발달|정서|행동|도파민/i.test(lower),
     isMediaOrHumanities: /미디어|언론|문학|어학|철학|역사|문화|담론|프레임|번역|텍스트/i.test(lower),
     isChem: /화학|유기화학|산염기|평형|반응속도|완충|촉매|결합|고분자/i.test(lower),
@@ -313,8 +315,380 @@ export function synthesizeComprehensiveCurriculum(
 
   const interestClean = cleanInterest.length > 35 ? cleanInterest.slice(0, 32) + '...' : cleanInterest;
 
-  // Domain 0: Geography / Urban
-  if (profile.isGeographyOrUrban) {
+  // Prioritize 15 Precision Academic Domains from fifteenCurriculumDatabase
+  const matchedFifteen = fifteenCurriculumDatabase.find((d) => d.detect(contextStr));
+  if (matchedFifteen) {
+    majorOverview = matchedFifteen.majorOverview;
+    connectionSummary = matchedFifteen.connectionSummary;
+
+    for (const item of matchedFifteen.subjects) {
+      subjects.push({
+        ...item,
+        concreteSteps: create4ConcreteSteps(
+          item.topic,
+          item.subject,
+          item.curriculumConcept,
+          item.methodology,
+          item.recommendedTools,
+          item.level
+        ),
+      });
+    }
+  } else if (profile.isMarketingOrBiz || (profile.isEconOrBiz && !profile.isGeographyOrUrban && !profile.isEnvOrClimate)) {
+    majorOverview = `'${cleanInterest}' 분야는 소비자 심리, 시장 경제 메커니즘, 정량적 데이터 사이언스 및 커뮤니케이션 수사학이 융합된 대표적인 현대 경영·사회과학 영역입니다. 경영·마케팅·미디어커머스 계열 진로를 희망하는 고등학생에게 필수적인 '데이터 기반 의사결정', '고객 가치 창출', '데이터 윤리와 프라이버시 거버넌스'를 6개 교과와 연계하여, 기초 교과서 개념(기본 2개)부터 전문 수리 모델링 및 학술 논문 분석(심화 1개)까지 총 18개의 수준별 실전 탐구 선택지를 제공합니다.`;
+    connectionSummary = `학생의 핵심 관심 분야인 '${cleanInterest}'을 6대 전 교과와 융합하여, 수학에서는 광고 클릭률(CTR) 함수와 고객 세분화부터 베이즈 정리 기반 LTV/이탈률 모델링까지, 과학에서는 친환경 패키징 분해 실험부터 fMRI 뉴로마케팅 인지과학까지, 사회는 동적 가격 책정(Dynamic Pricing)부터 쿠키리스 AI 타깃 광고 윤리까지 난이도별 3가지 주제로 폭넓게 확장합니다.`;
+
+    // 1. Math 3 topics
+    subjects.push({
+      subject: '수학 (공통수학 / 수학Ⅰ / 미적분)',
+      subjectCategory: 'math',
+      level: 'basic',
+      levelLabel: '기본 탐구 (교과서 중심 · 개념 이해)',
+      difficultyRating: 2,
+      suitability: '고1~2 추천 · 함수의 그래프와 증가·감소를 활용한 광고 전환율 분석',
+      curriculumConcept: '수학: 함수의 그래프와 증가·감소 / 평균변화율 / 로그함수의 점근선',
+      topic: '함수의 그래프와 변화율을 활용한 온라인 광고 노출 대비 클릭률(CTR) 및 구매 전환율(CVR)의 한계 효용 분석',
+      inquiryQuestion: '온라인 광고 예산 집행 금액이 증가함에 따라 클릭률(CTR)과 전환율(CVR)의 증가세가 둔화되는 현상을 고교 수학의 한계효용 함수로 어떻게 정량화할 수 있는가?',
+      connectionRationale: '복잡한 머신러닝 대신, 고교 수학의 로그함수와 평균변화율 개념을 통해 마케팅 비용 투입 대비 전환율의 수렴 패턴을 직관적으로 증명할 수 있습니다.',
+      methodology: '가상의 마케팅 광고비 투입액(X)과 클릭률(Y) 데이터를 설정하고, 엑셀과 지오지브라로 로그함수 y = a * ln(x) + b를 피팅하여 한계변화율(미분계수)의 감소 추세 도출',
+      recommendedTools: ['수학 교과서', 'Excel 스프레드시트', '지오지브라(GeoGebra)'],
+      readingRecommendation: '《수학, 인문으로 수를 읽다》(이광연), 《마케팅 평가 바이블》(마크 제프리)',
+      recordTip: '고교 수학의 함수 변화율과 로그함수 개념을 마케팅의 한계수익 체감 원리와 유기적으로 결합하여 분석한 성실한 수리적 탐구 태도 기술',
+      draftRecordSnippet: `수학 시간에 '함수의 증가와 감소 및 평균변화율'을 학습한 후, 평소 관심 분야인 AI 마케팅에 접목함. 디지털 광고비 투입액에 따른 클릭률(CTR) 변화 데이터를 좌표평면에 도출하고 로그함수 모델로 피팅함. 투입 비용이 일정 수준을 넘어서면 한계변화율이 급격히 0에 수렴하는 현상을 수식으로 증명하며 최적 광고 예산 집행 구간을 수학적으로 도출함.`,
+      concreteSteps: create4ConcreteSteps('광고 클릭률 한계효용 함수 분석', '수학', '함수의 증가·감소와 평균변화율', '광고비 대비 CTR 로그함수 피팅', ['Excel', '지오지브라'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '수학 (확률과 통계)',
+      subjectCategory: 'math',
+      level: 'basic',
+      levelLabel: '기본 탐구 (실생활 사례 · 통계 탐색)',
+      difficultyRating: 3,
+      suitability: '고1~2 추천 · 대푯값과 상자그림(Boxplot)을 활용한 고객 소비 패턴 비교',
+      curriculumConcept: '확률과 통계: 대푯값(평균, 중앙값)과 산포도(분산, 표준편차), 상자그림(Box Plot)',
+      topic: '확률과 통계의 대푯값과 산포도(Boxplot)를 이용한 이커머스 고객 연령대별 소비 지출 패턴 및 군집 세분화(Segmentation) 분석',
+      inquiryQuestion: '고객의 1회 평균 결제액과 월간 구매 빈도 데이터를 상자그림(Boxplot)과 사분위수로 시각화했을 때 이상치(VIP 고객군)를 어떻게 통계적으로 식별할 수 있는가?',
+      connectionRationale: '통계청 및 e커머스 공개 데이터를 고교 확통의 상자그림으로 분석하여 마케팅의 핵심 전략인 타깃 고객 세분화(Segmentation)를 데이터로 검증합니다.',
+      methodology: '통계청 가계동향조사 및 온라인 쇼핑 동향 CSV 데이터를 수집하여 연령별 소비 지출액의 평균, 중앙값, IQR(사분위범위)을 계산하고 이상치를 판별하는 상자그림 작성',
+      recommendedTools: ['통계청 KOSIS 국가통계포털', 'Excel 통계 분석 도구', '이지통계'],
+      readingRecommendation: '《통계의 미학》(최제호), 《린 분석》(알리스태어 크롤)',
+      recordTip: '평균의 함정을 극복하기 위해 중앙값과 상자그림을 활용하여 실제 고객 데이터의 편차와 이상치를 판별해낸 우수한 데이터 해석 역량 기재',
+      draftRecordSnippet: `확률과 통계의 '대푯값과 산포도' 단원을 이수하며 국가통계포털(KOSIS)의 온라인 쇼핑 거래 통계를 분석함. 평균 결제액의 왜도를 보완하고자 사분위수와 상자그림(Boxplot)을 직접 그려 연령대별 소비 편차를 시각화함. 상위 1.5*IQR을 초과하는 이상치 집단의 특성을 파악하여 고부가가치 타깃 마케팅 세분화(Segmentation) 전략을 통계적으로 제안함.`,
+      concreteSteps: create4ConcreteSteps('고객 소비 지출 상자그림 세분화', '수학', '대푯값과 상자그림', '통계청 데이터 정제 및 IQR 이상치 검출', ['KOSIS', 'Excel'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '수학 (확률과 통계 / 미적분)',
+      subjectCategory: 'math',
+      level: 'advanced',
+      levelLabel: '심화 탐구 (정량 모델링 · 수리 알고리즘)',
+      difficultyRating: 5,
+      suitability: '고2~3 추천 · 베이즈 정리와 로지스틱 함수를 결합한 고객 이탈률 예측 모델링',
+      curriculumConcept: '확률과 통계: 조건부 확률과 베이즈 정리 / 미적분: 로지스틱 함수(시그모이드)와 미분계수',
+      topic: '베이즈 정리(조건부 확률)와 로지스틱 함수를 결합한 이커머스 고객 생애 가치(LTV) 및 이탈률(Churn Rate) 예측 수리 모델링',
+      inquiryQuestion: '사전 확률(과거 방문 주기)과 사후 조건부 확률(최근 장바구니 담기 행동)을 베이즈 정리로 결합했을 때, 30일 이내 고객 이탈 확률을 로지스틱 함수로 모델링할 수 있는가?',
+      connectionRationale: '고교 확통의 조건부 확률과 미적분의 시그모이드 함수를 실제 기업의 핵심 KPI인 고객 이탈률(Churn Rate) 계산에 접목하여 압도적인 수리적 심화 역량을 입증합니다.',
+      methodology: '고객 행동 변수(최근 구매일 Recency, 빈도 Frequency, 결제액 Monetary)를 정규화한 후, 베이즈 사후 확률을 로지스틱 함수 P(Y=1) = 1 / (1 + e^-z)에 대입하여 이탈 임계치(Threshold)를 미분계수로 검증',
+      recommendedTools: ['Python (Google Colab / NumPy)', '수학 모델링 시트', 'Desmos Graphing'],
+      readingRecommendation: '《베이즈 통계의 기초》(와쿠이 요시유키), 《인공지능을 위한 수학》(이병수)',
+      recordTip: '고교 확통의 조건부 확률을 고차원 이탈 예측 수리 모델로 확장하고 미분계수를 통해 최적의 재방문 프로모션 시점을 수학적으로 도출한 탁월한 역량 기술',
+      draftRecordSnippet: `확률과 통계의 '조건부 확률'과 미적분의 '지수함수 미분'을 융합하여 이커머스 고객 이탈률(Churn Rate) 예측 수리 모델을 구축함. 과거 구매 주기(사전확률)와 최근 장바구니 방치 여부(사건)를 베이즈 정리로 결합하여 사후 이탈 확률을 계산함. 이를 로지스틱 시그모이드 곡선으로 모델링하고 변곡점(2계 도함수)을 분석하여 고객 이탈을 방지하는 골든타임 프로모션 시점을 정량화함.`,
+      concreteSteps: create4ConcreteSteps('베이즈 정리 고객 이탈률 모델링', '수학', '조건부 확률과 로지스틱 함수', 'Python NumPy 베이즈 확률 계산 및 시그모이드 피팅', ['Google Colab', 'Desmos'], 'advanced'),
+    });
+
+    // 2. Science 3 topics
+    subjects.push({
+      subject: '과학 (통합과학 / 화학Ⅰ)',
+      subjectCategory: 'science',
+      level: 'basic',
+      levelLabel: '기본 탐구 (교과서 중심 · 개념 이해)',
+      difficultyRating: 2,
+      suitability: '고1~2 추천 · 친환경 포장재(PLA vs 종이)의 물리화학적 특성 비교',
+      curriculumConcept: '통합과학: 신소재의 개발과 활용 / 화학Ⅰ: 고분자 화합물과 분해 반응',
+      topic: '통합과학 친환경 에코 패키징 소재(생분해성 PLA vs 재생 펄프 종이)의 수분 흡수율 및 생분해 특성 비교를 통한 그린 마케팅 실증',
+      inquiryQuestion: '소비자들이 선호하는 친환경 포장재(PLA 생분해 플라스틱과 크라프트지)의 물리·화학적 내구성과 분해 속도를 비교 실험하여 "진정성 있는 친환경 마케팅"의 근거를 어떻게 확보할 것인가?',
+      connectionRationale: '광고의 "그린워싱" 문제를 과학 실험(수분 투과율 및 내구성 테스트)을 통해 비판적으로 검증하여 이과적 소양을 갖춘 경영·마케팅 인재의 차별점을 부각합니다.',
+      methodology: '동일 규격의 일반 플라스틱, 생분해 PLA, 크라프트 종이 시편을 준비하고, 수분 침지 후 인장 강도 변화와 토양 매립 14일간의 질량 감소율(분해율) 측정 비교',
+      recommendedTools: ['실험실 전자저울', '버니어 캘리퍼스', '토양 화분 키트'],
+      readingRecommendation: '《플라스틱 사회》(김태희), 《녹색 마케팅》(존 그랜트)',
+      recordTip: '기업의 친환경 마케팅 주장을 무비판적으로 수용하지 않고, 과학 교과에서 배운 고분자 분해 메커니즘을 토대로 직접 실험하여 검증한 융합적 탐구 자세 강조',
+      draftRecordSnippet: `통합과학 '신소재의 활용' 단원을 학습하며 최근 유통업계의 에코 패키징 마케팅에 주목함. 생분해 PLA와 재생 크라프트지의 수분 흡수율 및 인장 강도를 직접 실험 비교함. PLA 소재가 방수성은 뛰어나지만 일반 자연 토양이 아닌 특정 고온 퇴비화 조건에서만 분해된다는 과학적 한계를 규명하고, 소비자를 기만하지 않는 '그린워싱 방지 패키징 표시제'를 제안함.`,
+      concreteSteps: create4ConcreteSteps('친환경 패키징 소재 분해 실험', '과학', '고분자 화합물과 신소재', 'PLA vs 종이 수분 침지 및 질량 측정', ['전자저울', '화분 키트'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '과학 (물리학Ⅰ / 생명과학Ⅰ)',
+      subjectCategory: 'science',
+      level: 'basic',
+      levelLabel: '기본 탐구 (실생활 사례 · 통계 탐색)',
+      difficultyRating: 3,
+      suitability: '고1~2 추천 · 빛의 스펙트럼과 색온도가 소비자 시각 주의 집중도에 미치는 영향',
+      curriculumConcept: '물리학Ⅰ: 파동의 성질과 전자기파 스펙트럼 / 통합과학: 시각 수용체(원추세포)와 색채 지각',
+      topic: '물리학Ⅰ 빛의 스펙트럼 및 디스플레이 색온도(RGB 파장)가 소비자의 시각적 주의 집중도와 브랜드 인지 반응 시간에 미치는 영향',
+      inquiryQuestion: '스마트폰 화면 속 배너 광고의 블루라이트 파장(450nm)과 웜톤 파장(600nm)에 따른 인간 시각 인지 반응 시간(Reaction Time)의 차이는 광학적으로 어떻게 설명되는가?',
+      connectionRationale: '물리학의 빛과 파동 원리를 마케팅 시각 디자인 및 UI/UX 시선 추적과 결합하여 과학과 경영의 융합 세특을 완벽하게 완성합니다.',
+      methodology: '동일한 브랜드 카피를 색온도별(쿨톤 블루 450nm vs 웜톤 레드 620nm)로 제작하여 교내 피험자 20명을 대상으로 시각 반응 속도 측정 앱(Human Benchmark)을 통해 인지 반응 시간(ms) 측정 및 T-검정',
+      recommendedTools: ['빛 스펙트럼 분석 앱', '반응 속도 측정 도구 (Human Benchmark)', 'Excel'],
+      readingRecommendation: '《빛의 물리학》(EBS 제작팀), 《컬러의 말》(카시아 세인트 클레어)',
+      recordTip: '물리학의 전자기파 파장과 망막 원추세포의 광자극 메커니즘을 마케팅 시각 인지에 접목하여 과학적 근거에 기반한 UI 컬러 가이드라인을 도출한 창의력 기술',
+      draftRecordSnippet: `물리학Ⅰ '빛과 파동' 단원에서 전자기파 스펙트럼을 배우고, 모바일 광고 색온도가 소비자 반응 속도에 미치는 영향을 실험함. 단파장 청색광(450nm)과 장파장 적색광(620nm) 배너에 대한 20명의 반응 시간(ms)을 측정하여 T-검정으로 분석함. 청색광 자극이 시각 원추세포 활성화로 반응 속도를 14% 단축시키지만 시각 피로도를 높인다는 광학적 결론을 내리고 최적 UI 색채 전략을 수립함.`,
+      concreteSteps: create4ConcreteSteps('디스플레이 색온도별 시각 반응 실험', '과학', '전자기파 스펙트럼과 파장', '색온도별 자극 제시 및 인지 반응시간(ms) 측정', ['반응속도 도구', 'Excel'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '과학 (생명과학Ⅱ / 융합과학)',
+      subjectCategory: 'science',
+      level: 'advanced',
+      levelLabel: '심화 탐구 (정량 모델링 · 논문 분석)',
+      difficultyRating: 5,
+      suitability: '고2~3 추천 · 뇌 신경전달물질(도파민)과 fMRI 기반 뉴로마케팅 인지 메커니즘 고찰',
+      curriculumConcept: '생명과학Ⅱ: 뉴런의 흥분 전도와 전달, 시냅스 전달물질 / 생명과학Ⅰ: 뇌의 구조(측핵, 편도체, 전두엽)',
+      topic: '생명과학Ⅱ 자극의 전달과 신경전달물질(도파민) 보상 회로를 접목한 브랜드 자극에 대한 fMRI 뉴로마케팅(Neuromarketing) 인지과학 메커니즘 고찰',
+      inquiryQuestion: '강렬한 브랜드 로고와 청각 징글(Jingle) 자극이 제시될 때 뇌의 변연계(측핵) 도파민 분비와 전두엽 의사결정 경로의 활성화 차이는 뉴로마케팅에서 어떻게 설명되는가?',
+      connectionRationale: '단순한 설문조사 마케팅의 한계를 넘어 뇌신경과학과 인지심리학 논문을 분석하는 최고 수준의 심화 탐구로 대학 입학사정관에게 강력한 인상을 남깁니다.',
+      methodology: 'KCI 및 PubMed의 뉴로마케팅 fMRI 논문 3편을 발췌 비교하여, 브랜드 선호도가 뇌의 보상계(측핵 Nuccleus Accumbens) 활성화와 전두엽 억제 회로에 미치는 신호 강도(BOLD 신호) 메커니즘 분석',
+      recommendedTools: ['RISS / Google Scholar 학술 검색', '생명과학 학술 저널', 'fMRI 뇌 지도 시각화 도구'],
+      readingRecommendation: '《뇌, 욕망의 비밀을 풀다》(한스-게오르크 호이젤), 《뉴로마케팅》(패트릭 렌부아제)',
+      recordTip: '생명과학의 시냅스 신경전달물질과 뇌 영역별 기능 지식을 마케팅의 무의식적 브랜드 선호 형성 과정과 융합하여 탁월한 학문적 깊이를 보여준 탐구 기록',
+      draftRecordSnippet: `생명과학Ⅱ '자극의 전달과 신경계' 단원을 심화하여 브랜드 자극이 뇌 보상 회로에 미치는 뉴로마케팅 기제를 탐구함. fMRI 기반 선행 학술 논문을 분석하여 친숙한 브랜드 로고 노출 시 도파민성 측핵(NAcc)이 활성화되어 복내측 전전두엽피질(vmPFC)의 가치 평가를 촉진하는 신경학적 경로를 도해화함. 전통적 설문 조사의 주관적 편향을 뇌과학적 바이오마커로 극복하는 미래 마케팅의 방향성을 제시함.`,
+      concreteSteps: create4ConcreteSteps('fMRI 뉴로마케팅 뇌 메커니즘 분석', '과학', '신경전달물질과 보상 회로', '선행 논문 BOLD 신호 비교 및 뇌 신경 회로 매핑', ['학술 DB', '뇌 지도 도구'], 'advanced'),
+    });
+
+    // 3. Social / Ethics / Econ 3 topics
+    subjects.push({
+      subject: '사회 (경제 / 통합사회)',
+      subjectCategory: 'social',
+      level: 'basic',
+      levelLabel: '기본 탐구 (교과서 중심 · 개념 이해)',
+      difficultyRating: 2,
+      suitability: '고1~2 추천 · 수요·공급과 가격 탄력성을 활용한 플랫폼 동적 가격 책정 분석',
+      curriculumConcept: '경제: 시장 가격의 결정과 변동, 수요의 가격 탄력성 / 통합사회: 시장 경제와 금융',
+      topic: '경제 가격 탄력성과 시장 수요·공급 곡선을 활용한 항공권·숙박·배달앱의 동적 가격 책정(Dynamic Pricing) 실생활 사례 분석',
+      inquiryQuestion: '시간대별, 기상 상황별로 배달비나 택시 호출료가 달라지는 동적 가격 책정은 고교 경제 교과서의 수요·공급 탄력성 원리로 어떻게 정당화되며 소비자 잉여에 어떤 영향을 주는가?',
+      connectionRationale: '일상에서 매일 겪는 배달비와 택시비 변동을 교과서 가격 탄력성 공식과 그래프로 분석하여 실용적이면서도 명확한 사회 세특을 만듭니다.',
+      methodology: '배달 플랫폼 3곳의 기상 상태별(우천 vs 맑음) 배달 요금 데이터를 수집하고, 교과서 속 수요 곡선 이동과 탄력성 공식 E = (ΔQ/Q) / (ΔP/P)을 적용하여 소비자 잉여 변화 분석',
+      recommendedTools: ['경제 교과서', '플랫폼 요금 변동 시트', '통합사회 부교재'],
+      readingRecommendation: '《경제학 콘서트》(팀 하포드), 《가격의 비밀》(윌리엄 파운드스톤)',
+      recordTip: '고교 경제 교과의 핵심 원리인 수요 탄력성과 가격 차별화 이론을 최신 플랫폼 동적 가격제에 적용하여 명쾌하게 해석한 경제적 직관력 기술',
+      draftRecordSnippet: `경제 수업에서 '수요의 가격 탄력성과 시장 가격'을 학습하고 배달 플랫폼의 기상 할증 요금 체계를 분석함. 우천 시 공급 감소와 수요 급증으로 인한 균형점 이동을 그래프로 그리고 탄력성 비탄력 구간에서의 소비자 잉여 감소를 계산함. 효율적 자원 배분이라는 기업 측 이익과 정보 비대칭성에 따른 소비자 부담 사이의 상충 관계를 경제학적으로 논리정연하게 정리함.`,
+      concreteSteps: create4ConcreteSteps('동적 가격 책정 탄력성 분석', 'social', '수요의 가격 탄력성과 시장 균형', '배달앱 요금 수집 및 소비자 잉여 그래프 작성', ['경제 교과서', 'Excel'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '사회 (경제 / 사회·문화)',
+      subjectCategory: 'social',
+      level: 'basic',
+      levelLabel: '기본 탐구 (실생활 사례 · 통계 탐색)',
+      difficultyRating: 3,
+      suitability: '고1~2 추천 · 행동경제학의 손실 회피 및 넛지 이론을 적용한 이커머스 UX 분석',
+      curriculumConcept: '경제: 합리적 선택과 한계, 행동경제학 / 사회·문화: 정보 사회의 문화와 소비 양식',
+      topic: '경제·사회문화 행동경제학의 "손실 회피(Loss Aversion)" 및 "넛지(Nudge)" 이론을 적용한 온라인 커머스 결제 유도 UX/UI 디자인 분석',
+      inquiryQuestion: '"마감 임박", "현재 35명이 보고 있습니다"와 같은 긴급성 알림 문구가 소비자의 손실 회피 심리를 자극하여 구매 결정을 촉진하는 메커니즘은 무엇인가?',
+      connectionRationale: '교과서의 전통 경제학(합리적 인간)과 최신 행동경제학의 넛지 이론을 비교 대조하여 마케팅의 심리적 기제를 논리정연하게 탐구합니다.',
+      methodology: '주요 쇼핑몰 앱(쿠팡, 네이버, 무신사) 화면 캡처 후 넛지 요소(디폴트 옵션, 희소성 메시지, 사회적 증거)를 분류하고 고교생 50명 대상 구매 충동 유발도 설문조사 진행',
+      recommendedTools: ['Google Forms 설문지', '행동경제학 분석 프레임워크', '쇼핑몰 앱 UI 캡처'],
+      readingRecommendation: '《넛지》(리처드 탈러), 《생각에 관한 생각》(대니얼 카너먼)',
+      recordTip: '전통 경제학의 완전합리성 가정을 비판적으로 극복하고 제한된 합리성과 행동경제학 이론을 실제 쇼핑몰 구매 인터페이스와 결합한 관찰력 기술',
+      draftRecordSnippet: `경제 '합리적 선택의 한계' 단원에서 카너먼의 전망 이론(Prospect Theory)을 공부함. 국내 주요 e커머스 앱의 '품절 임박' 카운트다운과 '실시간 구매 알림'이 소비자의 손실 회피 편향(Loss Aversion)을 유발하는 구조를 분석함. 교내 학생 50명 대상 모의 구매 설문에서 동일 할인율 대비 손실 회피 프레이밍의 선택률이 28%p 높음을 실증하고, 소비자의 비합리적 과소비를 유도하는 다크 패턴(Dark Pattern) 개선안을 제안함.`,
+      concreteSteps: create4ConcreteSteps('행동경제학 넛지 UX 분석', 'social', '전망 이론과 손실 회피', '쇼핑몰 UI 다크패턴 분류 및 교내 설문 조사', ['Google Forms', '캡처 도구'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '사회 (생활과 윤리 / 사회문제 탐구)',
+      subjectCategory: 'social',
+      level: 'advanced',
+      levelLabel: '심화 탐구 (정량 모델링 · 정책 조례 설계)',
+      difficultyRating: 5,
+      suitability: '고2~3 추천 · 쿠키리스 시대의 초개인화 타깃 광고와 소비자 데이터 주권 윤리 연구',
+      curriculumConcept: '생활과 윤리: 정보 사회와 윤리, 프라이버시 권리 / 사회문제 탐구: 빅데이터와 알고리즘의 사회적 영향',
+      topic: '생활과 윤리·사회문제 탐구 서드파티 쿠키(Third-party Cookie) 수집 제한 시대의 AI 초개인화 타깃 광고와 소비자 데이터 주권(Data Sovereignty) 간의 윤리적 갈등 연구',
+      inquiryQuestion: '빅테크 기업의 초개인화 행동 데이터 추적 기술과 소비자의 잊힐 권리 및 개인정보 자기결정권이 충돌할 때, 윤리적이면서 지속가능한 마케팅 데이터 거버넌스의 기준은 무엇인가?',
+      connectionRationale: 'EU GDPR과 애플/구글의 개인정보 보호 정책(쿠키리스)을 고교 윤리 교과의 정보 프라이버시 및 칸트의 의무론적/공리주의적 관점에서 다학제적으로 심층 고찰합니다.',
+      methodology: 'EU GDPR 및 한국 개인정보보호법 조항을 비교 분석하고, 칸트의 인간 목적주의와 밀의 공리주의 윤리 렌즈를 통해 기업의 마케팅 데이터 수집 동의 절차의 투명성 개선 지침서(안) 작성',
+      recommendedTools: ['국가법령정보센터', 'EU GDPR 원문 포털', '생활과 윤리 교과서'],
+      readingRecommendation: '《감시 자본주의의 시대》(쇼샤나 주보프), 《정의란 무엇인가》(마이클 샌델)',
+      recordTip: '정보 사회의 가장 첨예한 쟁점인 데이터 프라이버시와 기업 이윤의 충돌을 고전 윤리 사상(칸트 vs 벤담)으로 체계화하여 성숙한 철학적 시각을 드러냄',
+      draftRecordSnippet: `생활과 윤리 '정보 윤리와 프라이버시' 단원을 심화하여 글로벌 브라우저의 서드파티 쿠키 차단 조치에 따른 AI 타깃 마케팅의 윤리적 쟁점을 탐구함. 칸트의 의무론적 관점에서 소비자를 단순한 데이터 생성 수단으로 전락시키는 무분별한 리타깃팅 광고를 비판함. 동시에 공리주의적 맞춤형 편익을 고려하여, 소비자가 자신의 광고 수신 데이터를 직접 제어하고 보상받는 '데이터 주권(Data Sovereignty) 기반 옵트인(Opt-in) 모델'을 정책 제언함.`,
+      concreteSteps: create4ConcreteSteps('쿠키리스 데이터 주권 윤리 연구', 'social', '정보 프라이버시와 윤리적 정당성', 'GDPR 법령 비교 및 칸트/공리주의 윤리 분석', ['국가법령정보센터', '학술 논문'], 'advanced'),
+    });
+
+    // 4. Korean 3 topics
+    subjects.push({
+      subject: '국어 (화법과 작문)',
+      subjectCategory: 'korean',
+      level: 'basic',
+      levelLabel: '기본 탐구 (교과서 중심 · 개념 이해)',
+      difficultyRating: 2,
+      suitability: '고1~2 추천 · 아리스토텔레스 3대 설득 전략(에토스/파토스/로고스) 분석',
+      curriculumConcept: '화법과 작문: 설득을 위한 논증 구조, 수사학적 표현 기법(에토스, 파토스, 로고스)',
+      topic: '화법과 작문 광고 헤드카피 속 아리스토텔레스 3대 설득 전략(에토스·파토스·로고스) 분석 및 청소년 공익 마케팅 슬로건 창작',
+      inquiryQuestion: '국내외 대표 기업의 브랜드 슬로건 10편에서 신뢰성(에토스), 감정적 공감(파토스), 논리적 근거(로고스)가 각각 어떤 비중으로 배합되어 소비자 설득을 이끌어내는가?',
+      connectionRationale: '국어 교과서의 고전 수사학 이론을 현대 광고 헤드카피에 대입하여 실전적 글쓰기 역량과 마케팅 커뮤니케이션 능력을 증명합니다.',
+      methodology: '국내 10대 브랜드 광고 카피를 추출하여 에토스(화자 신뢰), 파토스(감성 자극), 로고스(객관 수치) 3요소 매트릭스로 분류하고 청소년 스마트폰 과의존 예방 공익 카피 직접 창작',
+      recommendedTools: ['광고정보센터(ADIC)', '화법과 작문 교과서', '스토리보드 양식'],
+      readingRecommendation: '《수사학》(아리스토텔레스), 《인문학으로 광고하다》(박웅현)',
+      recordTip: '고전 수사학의 설득 원리를 현대 상업·공익 광고 언어에 체계적으로 적용하고 이를 바탕으로 감동을 주는 창작물까지 도출해낸 국어 작문 능력 강조',
+      draftRecordSnippet: `화법과 작문 수업에서 '설득하는 글쓰기와 수사학'을 학습하고 브랜드 광고 문구 10편을 분석함. 애플과 나이키 등의 슬로건에서 에토스(철학적 신뢰)와 파토스(도전적 공감)가 결합되어 로고스(기능 설명)를 압도하는 수사학적 패턴을 도출함. 이를 바탕으로 교내 에너지 절약을 유도하는 청소년 공익 캠페인 카피를 직접 창작하여 전교생 공모전에서 우수한 설득력을 인정받음.`,
+      concreteSteps: create4ConcreteSteps('광고 카피 수사학 설득 전략 분석', 'korean', '에토스·파토스·로고스 수사학', '10대 광고 카피 매트릭스 분류 및 공익 카피 창작', ['ADIC 포털', '교과서'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '국어 (언어와 매체)',
+      subjectCategory: 'korean',
+      level: 'basic',
+      levelLabel: '기본 탐구 (실생활 사례 · 통계 탐색)',
+      difficultyRating: 3,
+      suitability: '고1~2 추천 · SNS 숏폼 광고 문구의 형태소 및 감정 어휘 말뭉치 분석',
+      curriculumConcept: '언어와 매체: 품사의 분류와 형태소 분석, 매체 언어의 복합 양식성(Multimodality)',
+      topic: '언어와 매체 SNS 인스타그램·유튜브 숏폼 커머스 광고 문구의 형태소 빈도 및 감정 어휘(긍·부정 형용사) 말뭉치(Corpus) 비교 분석',
+      inquiryQuestion: '숏폼 영상 자막과 인스타그램 카드뉴스 본문에서 소비자의 즉각적 클릭을 유도하는 "호기심 유발 감정 형용사"와 "명사형 종결어미"의 출현 빈도 특성은 무엇인가?',
+      connectionRationale: '언어와 매체의 품사 및 문장 성분 지식을 실제 마케팅 미디어 텍스트 분석에 적용하여 실증적 국어 탐구 보고서를 완성합니다.',
+      methodology: 'SNS 뷰티/패션 광고 50건의 자막 텍스트를 수집하여 국립국어원 형태소 분석기(또는 한국어 형태소 태거)로 명사, 동사, 감정 형용사 출현 빈도를 정량 집계하고 워드클라우드 시각화',
+      recommendedTools: ['국립국어원 한국어 말뭉치', 'KoNLPy / 형태소 분석 도구', '워드클라우드'],
+      readingRecommendation: '《우리말 문법론》(고영근), 《미디어 리터러시의 이해》(정현선)',
+      recordTip: '고교 문법의 형태소와 품사 지식을 소셜 미디어 마케팅 텍스트에 적용하여 어휘 선택이 독자의 인지적 주의에 미치는 영향을 정량적으로 밝힌 탐구력 기재',
+      draftRecordSnippet: `언어와 매체 '국어의 구조와 매체 특성' 단원을 이수하며 SNS 숏폼 커머스 영상 50편의 자막을 형태소 분석함. 일반 문어체와 달리 체언 종결형(명사형)과 호기심 유발 형용사(역대급, 충격적 등)의 출현 빈도가 3.8배 높음을 도출함. 시각적 영상과 결합하여 정보 전달을 극대화하는 매체 언어의 축약성과 감정성 편향을 비판적으로 고찰하는 보고서를 완성함.`,
+      concreteSteps: create4ConcreteSteps('SNS 광고 언어 형태소 말뭉치 분석', 'korean', '형태소와 품사 분류', '광고 자막 50건 수집 및 품사 빈도 집계', ['형태소 분석기', '워드클라우드'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '국어 (독서 / 화법과 작문)',
+      subjectCategory: 'korean',
+      level: 'advanced',
+      levelLabel: '심화 탐구 (정량 모델링 · 비판적 에세이)',
+      difficultyRating: 5,
+      suitability: '고2~3 추천 · 생성형 AI 카피라이팅과 인간 카피라이터의 문체론적 수사학 비교',
+      curriculumConcept: '독서: 인문·예술 분야의 글 심층 독해 / 화법과 작문: 문체와 수사학적 표현의 심미성',
+      topic: '독서·화법과 작문 생성형 AI(ChatGPT) 작성 광고 카피와 전문 카피라이터 창작물의 문체론적(Stylistics) 수사학 비교 및 인간 고유의 은유 창의성 비판 에세이',
+      inquiryQuestion: '동일한 상품 기획서에 대해 생성형 AI가 산출한 카피와 인간 카피라이터의 문구에서 은유(Metaphor)의 독창성과 문화적 맥락 수용성(Cultural Resonance)의 차이는 어떻게 평가되는가?',
+      connectionRationale: 'AI 카피라이팅 도구의 보급 속에서 인간 카피라이터의 비판적 사유와 인문학적 감수성의 가치를 심도 있게 논술하여 국어 교과 최우수 세특을 도출합니다.',
+      methodology: '동일 제품 프롬프트로 생성된 AI 광고 카피 10편과 대한민국 광고대상 수상작 10편을 은유의 참신성, 문장 리듬감, 문화적 뉘앙스 3대 지표로 비교 분석하고 1500자 비판 에세이 집필',
+      recommendedTools: ['대한민국 광고대상 수상작 도록', 'ChatGPT / Claude', '독서 감상문 노트'],
+      readingRecommendation: '《광고, 인간을 이해하는 가장 매혹적인 방법》(이승호), 《인공지능 시대의 글쓰기》(김대식)',
+      recordTip: '생성형 AI 시대에 언어의 본질과 인간 문체론의 고유성을 인문학적으로 깊이 있게 성찰하고 비판적 안목을 논리적으로 펼쳐낸 최상위 작문 역량 기술',
+      draftRecordSnippet: `독서 교과에서 '인문 예술의 심층 독해'를 공부하며 생성형 AI가 생성한 마케팅 카피와 인간 카피라이터의 대표작을 문체론(Stylistics)적 관점에서 비교 비평함. AI는 어휘 조합의 통계적 정밀함은 뛰어나지만, 사회적 금기를 유희로 전환하는 은유(Metaphor)나 시대적 결핍을 위로하는 문화적 울림에서는 명확한 한계를 보임을 논증함. 기술 만능주의를 경계하고 인간 중심의 감성 커뮤니케이션 가치를 역설하는 우수한 학술 에세이를 작성함.`,
+      concreteSteps: create4ConcreteSteps('AI vs 인간 카피 문체론 비교 에세이', 'korean', '문체론과 은유의 수사학', 'AI vs 광고대상 카피 20편 비교 분석 및 에세이 집필', ['수상작 도록', '생성 AI'], 'advanced'),
+    });
+
+    // 5. English 3 topics
+    subjects.push({
+      subject: '영어 (영어Ⅰ / 독해와 작문)',
+      subjectCategory: 'english',
+      level: 'basic',
+      levelLabel: '기본 탐구 (교과서 중심 · 개념 이해)',
+      difficultyRating: 2,
+      suitability: '고1~2 추천 · 글로벌 브랜드 슬로건 속 두운(Alliteration)과 운율 분석',
+      curriculumConcept: '영어Ⅰ: 글의 구조와 비유적 표현(Figurative Language), 음운론적 운율(Rhyme & Rhythm)',
+      topic: '영어Ⅰ 글로벌 브랜드 영문 슬로건 속 두운(Alliteration)과 은유(Metaphor) 등 음운론적·의미론적 수사 기법 분석',
+      inquiryQuestion: '나이키(Just Do It), 애플(Think Different) 등 글로벌 50대 브랜드 슬로건에서 소비자의 장기 기억을 돕는 두운법과 대조법의 언어적 메커니즘은 무엇인가?',
+      connectionRationale: '영어 교과서의 비유적 표현 단원을 실세계 글로벌 마케팅 캠페인 슬로건 분석과 직접 연결하여 흥미와 학업 성취도를 동시에 드러냅니다.',
+      methodology: '글로벌 50대 기업 슬로건을 발췌하여 두운(Alliteration), 유운(Assonance), 대조(Antithesis), 명령형 동사 구조를 분류하고 기억 회상도(Recall Rate) 상관성 조사',
+      recommendedTools: ['Interbrand Best Global Brands 리포트', '옥스퍼드 영영사전', '발음 음성 분석기'],
+      readingRecommendation: '《The Anatomy of Buzz》(엠마누엘 로젠), 《스틱!(Made to Stick)》(칩 히스)',
+      recordTip: '영문 슬로건에 내포된 비유와 음운론적 기법을 체계적으로 분석하여 글로벌 마케팅 커뮤니케이션의 언어적 메커니즘을 명쾌하게 규명한 영문학적 소양 강조',
+      draftRecordSnippet: `영어Ⅰ 수업에서 '비유적 표현과 언어의 음운 구조'를 학습한 후 포브스 선정 글로벌 50대 기업 슬로건의 수사학적 기법을 분석함. 'PayPal', 'Coca-Cola' 등 자음 반복(Alliteration)과 'Think Different'의 파격적 문법 구조가 소비자 인지 부하를 줄이고 브랜드 회상률을 극대화함을 영문 소논문 형식으로 정리함. 배운 영문법 지식을 비즈니스 커뮤니케이션에 능동적으로 응용하는 어학 능력을 보여줌.`,
+      concreteSteps: create4ConcreteSteps('글로벌 브랜드 영문 슬로건 수사학 분석', 'english', '비유적 표현과 두운법', '50대 글로벌 브랜드 슬로건 분류 및 영문 정리', ['Interbrand', '영영사전'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '영어 (영어Ⅱ / 심화 영어)',
+      subjectCategory: 'english',
+      level: 'basic',
+      levelLabel: '기본 탐구 (실생활 사례 · 통계 탐색)',
+      difficultyRating: 3,
+      suitability: '고1~2 추천 · 하버드 비즈니스 리뷰(HBR) 글로벌 D2C 마케팅 사례 강독',
+      curriculumConcept: '영어Ⅱ: 비즈니스 및 사회과학 학술 지문 독해, 핵심 논지 요약(Executive Summary)',
+      topic: '영어Ⅱ·영어 독해와 작문 하버드 비즈니스 리뷰(HBR) 글로벌 D2C 브랜드 마케팅 성공 사례 영문 케이스 스터디 발췌 독해 및 요약 발표',
+      inquiryQuestion: '글로벌 스타트업 기업이 유통 단계를 축소하고 고객과 직접 소통(D2C)하여 성공을 거둔 요인을 원서 학술 아티클에서 어떻게 분석하고 있는가?',
+      connectionRationale: '수능 수준의 심화 영문 경제·경영 텍스트를 능동적으로 독해하고 핵심 논지를 영어 요약문(Executive Summary)으로 작성하는 뛰어난 어학 역량을 보여줍니다.',
+      methodology: 'HBR(Harvard Business Review) 영문 기사 1편을 정독하고 비즈니스 전문 어휘(Omnichannel, Customer Acquisition Cost, Retention)를 정리한 후 1페이지 영문 브리프 작성 및 구두 발표',
+      recommendedTools: ['Harvard Business Review 아카이브', '영문 경제경영 전문사전', 'Google Docs'],
+      readingRecommendation: "《HBR's 10 Must Reads on Strategic Marketing》, 《원서로 읽는 경영학 핵심》",
+      recordTip: '대학 수준의 원서 경제경영 저널을 자기주도적으로 강독하고 핵심 개념을 유창한 영어 요약문과 프레젠테이션으로 발표한 우수한 영어 학술 능력 기재',
+      draftRecordSnippet: `영어Ⅱ 수업에서 '사회과학 지문의 논리적 전개'를 학습하고 하버드 비즈니스 리뷰(HBR)의 'The Direct-to-Consumer Revolution' 기사를 독해함. CAC(고객 획득 비용)와 LTV(고객 생애 가치) 등 전문 경영 경제 어휘 30개를 마인드맵으로 정리하고, 전통 유통망을 파괴한 글로벌 브랜드의 성공 요인을 3가지 영문 핵심 명제로 요약 발표하여 동료들의 큰 호응을 얻음.`,
+      concreteSteps: create4ConcreteSteps('HBR 영문 마케팅 아티클 독해 및 발표', 'english', '비즈니스 지문 독해 및 요약', 'HBR 기사 발췌 독해 및 1페이지 영문 브리프 작성', ['HBR 아카이브', '영한사전'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '영어 (심화 영어 독해와 작문 / 영어권 문화)',
+      subjectCategory: 'english',
+      level: 'advanced',
+      levelLabel: '심화 탐구 (정량 모델링 · 정책 제안서 작성)',
+      difficultyRating: 5,
+      suitability: '고2~3 추천 · 글로벌 기업의 ESG 코즈 마케팅에 관한 영문 학술 정책 제안서 작성',
+      curriculumConcept: '심화 영어: 학술적 에세이 및 정책 보고서 작성(Academic Writing), 다문화적 가치 이해',
+      topic: '심화 영어 독해와 작문·영어권 문화 글로벌 기업의 ESG 및 코즈 마케팅(Cause Marketing) 전략에 관한 영문 학술 정책 제안서(Policy Brief) 작성',
+      inquiryQuestion: '사회적 가치와 브랜드 이익을 동시에 창출하는 코즈 마케팅(Cause Marketing)이 Z세대 글로벌 소비자에게 진정성 있게 전달되기 위한 핵심 커뮤니케이션 전략은 무엇인가?',
+      connectionRationale: '단순한 독해를 넘어 전문적인 영문 학술 보고서(Policy Brief) 포맷으로 글로벌 마케팅 전략을 영작하여 최상위권 전공 적합성을 확실히 부각합니다.',
+      methodology: '글로벌 파타고니아(Patagonia)와 탐스(TOMS)의 코즈 마케팅 영문 백서를 분석하고, APA 양식에 맞춰 문제 정의(Executive Summary), SWOT 분석, 권고사항(Recommendations)을 담은 영문 정책 제안서(Policy Brief) 3페이지 완성',
+      recommendedTools: ['Purdue OWL (영문 학술 작문 가이드)', 'Grammarly', '글로벌 브랜드 지속가능경영보고서'],
+      readingRecommendation: '《Let My People Go Surfing》(이본 쉬나드), 《Corporate Social Responsibility in Marketing》',
+      recordTip: '학술적 영작문(Academic Writing) 형식에 완벽히 부합하는 정책 제안서를 작성하여 글로벌 경영 무대에서 통용될 영어 문서 작성 및 설득력을 입증',
+      draftRecordSnippet: `심화 영어 독해와 작문 수업을 이수하며 글로벌 친환경 브랜드의 지속가능경영 영문 보고서를 비교 분석함. 진정성 없는 '그린워싱'을 방지하고 Z세대 글로벌 소비자와의 정서적 유대를 형성하기 위한 전략적 코즈 마케팅 제안서(Policy Brief)를 APA 스타일의 영어로 집필함. 논리적인 단락 전개(Topic sentence - Supporting details)와 정확한 비즈니스 어휘 구사력이 돋보임.`,
+      concreteSteps: create4ConcreteSteps('ESG 코즈 마케팅 영문 정책 제안서 작성', 'english', '학술적 영작문과 정책 브리프', '영문 백서 분석 및 3페이지 Policy Brief 영작', ['Purdue OWL', 'Grammarly'], 'advanced'),
+    });
+
+    // 6. Information / AI 3 topics
+    subjects.push({
+      subject: '정보 (프로그래밍 / 데이터 과학)',
+      subjectCategory: 'tech',
+      level: 'basic',
+      levelLabel: '기본 탐구 (교과서 중심 · 개념 이해)',
+      difficultyRating: 2,
+      suitability: '고1~2 추천 · 파이썬 Pandas를 활용한 이커머스 매출 데이터 가공 및 시각화',
+      curriculumConcept: '정보: 데이터의 수집과 가공, 테이블 형태 데이터 처리(Pandas), 차트 시각화(Matplotlib)',
+      topic: '정보 파이썬(Python) Pandas 라이브러리를 활용한 온라인 쇼핑몰 가상 매출 데이터 정제 및 월별 베스트셀러 카테고리 시각화(EDA)',
+      inquiryQuestion: '결측치와 중복값이 포함된 1만 건의 이커머스 거래 데이터셋을 정제하여 요일별, 시간대별 최다 판매 상품군을 도출하는 데이터 파이프라인은 어떻게 구성되는가?',
+      connectionRationale: '누구나 학교 정보 시간에 배우는 파이썬 기본 데이터 분석 코드를 통해 마케팅 실무의 기본인 탐색적 데이터 분석(EDA) 역량을 명확히 입증합니다.',
+      methodology: '캐글(Kaggle) 이커머스 샘플 CSV 데이터를 Pandas read_csv()로 로드하고 dropna()로 결측치 처리 후, groupby()와 Matplotlib barplot으로 시간대별 구매 피크 시각화',
+      recommendedTools: ['Google Colab', 'Python (Pandas, Matplotlib)', 'Kaggle 데이터셋'],
+      readingRecommendation: '《파이썬 라이브러리를 활용한 데이터 분석》(웨스 맥키니), 《빅데이터 마케팅》(구자룡)',
+      recordTip: '고교 정보 교과의 파이썬 프로그래밍과 데이터 가공 문법을 실제 비즈니스 매출 데이터에 적용하여 실용적인 데이터 리터러시를 발휘한 역량 기술',
+      draftRecordSnippet: `정보 교과에서 '데이터의 관리와 분석'을 학습하고 파이썬 Pandas를 활용하여 온라인 쇼핑몰 1만 건의 거래 로그 데이터를 정제함. 결측치와 이상치를 정제(Data Cleaning)한 후 요일 및 시간대별 매출 추이를 Matplotlib 막대그래프로 시각화함. 금요일 야간 시간대에 뷰티/패션 품목의 거래액이 35% 급증하는 패턴을 도출하여 데이터 기반 마케팅 프로모션 집행 시점을 제안함.`,
+      concreteSteps: create4ConcreteSteps('파이썬 이커머스 매출 EDA 시각화', 'tech', 'Pandas 데이터 가공 및 시각화', 'CSV 로드, 결측치 정제 및 시간대별 막대그래프 생성', ['Google Colab', 'Kaggle'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '정보 (인공지능 기초)',
+      subjectCategory: 'tech',
+      level: 'basic',
+      levelLabel: '기본 탐구 (실생활 사례 · 통계 탐색)',
+      difficultyRating: 3,
+      suitability: '고1~2 추천 · 고객 리뷰 텍스트 데이터의 감성 분석(Sentiment Analysis)',
+      curriculumConcept: '인공지능 기초: 자연어 처리(NLP), 텍스트 토큰화, 감성 분류 사전 기반 긍·부정 분석',
+      topic: '인공지능 기초 포털 상품 고객 리뷰 텍스트 데이터의 감성 분석(Sentiment Analysis) 및 긍·부정 어휘 클라우드 제작',
+      inquiryQuestion: '소비자 리뷰 500건에서 제품의 "배송", "품질", "가격"에 대한 긍정 및 부정 감성 점수를 분류하고 시각화하여 제품 개선 인사이트를 도출할 수 있는가?',
+      connectionRationale: '마케팅 VoC(고객의 소리) 분석에 AI 자연어 처리 기본 모델을 접목하여 고객 중심 사고와 인공지능 활용 능력을 동시에 어필합니다.',
+      methodology: '공개 오픈마켓 상품 리뷰 500건을 웹 크롤링/추출하고, 형태소 분리 후 KNU 한국어 감성어휘사전을 매핑하여 리뷰별 긍/부정 점수 산출 및 불만 요인 워드클라우드 시각화',
+      recommendedTools: ['Google Colab', 'KNU 감성사전', 'WordCloud 라이브러리'],
+      readingRecommendation: '《모두의 인공지능 기초》(이두환), 《텍스트 마이닝 실무》(박진원)',
+      recordTip: '인공지능 기초의 자연어 처리와 감성 분석 알고리즘을 마케팅 고객 피드백(VoC) 분석에 직접 구현하여 실질적인 제품 개선점을 도출해낸 컴퓨팅 사고력 기술',
+      draftRecordSnippet: `인공지능 기초 '텍스트 데이터의 처리' 단원을 이수하며 포털 쇼핑 상품 리뷰 500건을 파이썬으로 감성 분석(Sentiment Analysis)함. 한국어 감성 어휘 사전을 매핑하여 문장별 긍·부정 점수를 산출하고 부정 리뷰에서 '배송 지연', '포장 파손' 키워드의 공기(Co-occurrence) 빈도를 워드클라우드로 시각화함. 고객 불만 요인을 정량화하여 제품 상세 페이지 개선안을 도출하는 AI 응용력을 발휘함.`,
+      concreteSteps: create4ConcreteSteps('고객 리뷰 텍스트 감성 분석', 'tech', '자연어 처리와 감성 어휘사전', '리뷰 텍스트 토큰화 및 긍·부정 점수 워드클라우드', ['Google Colab', 'KNU 사전'], 'basic'),
+    });
+
+    subjects.push({
+      subject: '정보 (정보 / 인공지능 기초)',
+      subjectCategory: 'tech',
+      level: 'advanced',
+      levelLabel: '심화 탐구 (정량 모델링 · 추천 알고리즘 구현)',
+      difficultyRating: 5,
+      suitability: '고2~3 추천 · 코사인 유사도와 협업 필터링 기반 초개인화 상품 추천 알고리즘 구현',
+      curriculumConcept: '정보: 행렬 연산과 다차원 배열 / 인공지능 기초: 추천 시스템(Recommendation System), 코사인 유사도',
+      topic: '인공지능 기초·정보 코사인 유사도(Cosine Similarity)와 협업 필터링(Collaborative Filtering) 기반 초개인화 상품 추천 알고리즘 파이프라인 구현',
+      inquiryQuestion: '사용자-아이템 평가 행렬(Matrix)에서 고객 간 구매 선호도 벡터의 코사인 유사도를 계산하여 "고객이 좋아할 만한 미구매 상품 Top 3"를 추천하는 알고리즘을 파이썬으로 구현할 수 있는가?',
+      connectionRationale: '넷플릭스, 아마존, 쿠팡의 핵심 알고리즘인 추천 시스템을 고교 수준의 수학적 벡터 유사도 계산과 파이썬 코딩으로 직접 구현하여 압도적인 정보·AI 역량을 입증합니다.',
+      methodology: '고객 10명 x 상품 10개로 구성된 평점 행렬 데이터를 생성하고, 두 사용자 벡터 간의 코사인 유사도 cos(θ) = (A·B) / (||A||*||B||) 수식을 파이썬 함수로 구현하여 미평가 상품의 예상 선호도를 가중평균으로 예측',
+      recommendedTools: ['Google Colab', 'Python (Scikit-learn, NumPy)', '수학 벡터 공식'],
+      readingRecommendation: '《추천 시스템 입문》(다나카 켄), 《인공지능 시대를 위한 컴퓨터 과학》(문병로)',
+      recordTip: '고교 정보 교과의 2차원 배열과 인공지능의 벡터 내적·코사인 유사도를 융합하여 초개인화 추천 알고리즘을 바닥부터 직접 구현한 탁월한 프로그래밍 역량 기재',
+      draftRecordSnippet: `정보 교과 '알고리즘 설계'와 인공지능 기초의 '추천 시스템'을 결합하여 협업 필터링(User-based Collaborative Filtering) 추천 파이프라인을 파이썬으로 구축함. 사용자 구매 선호도 행렬에서 벡터 내적과 크기 계산을 통해 코사인 유사도 수식을 함수화함. 타깃 사용자와 가장 유사한 고객군 3명의 평가를 가중평균하여 미구매 상품 선호도를 89% 정밀도로 예측해내는 뛰어난 알고리즘적 문제 해결력을 증명함.`,
+      concreteSteps: create4ConcreteSteps('코사인 유사도 추천 알고리즘 구현', 'tech', '행렬 연산과 코사인 유사도', '사용자-아이템 평점 행렬 코사인 유사도 파이썬 구현', ['Google Colab', 'NumPy'], 'advanced'),
+    });
+  }
+
+  // Domain 1: Geography / Urban
+  else if (profile.isGeographyOrUrban) {
     majorOverview = `'${cleanInterest}' 분야는 공간적 불평등과 자원 배분의 문제를 다루는 현대 사회의 대표적인 융합 연구 영역입니다. 학생들의 수준에 맞춰 고교 교과서 속 기본 개념과 친숙한 일상 사례부터, 지니계수 정적분 모델링과 인공위성 열적외선 데이터 분석에 이르는 심화 탐구까지 교과별로 3가지 수준(기본 2개, 심화 1개)의 폭넓은 탐구 선택지를 제공합니다.`;
     connectionSummary = `학생의 관심 분야인 '${cleanInterest}'을 6개 교과와 융합하여, 수학에서는 친숙한 평균·분산부터 정적분 지니계수 모델링까지, 과학에서는 일상 열섬 관찰부터 복사 평형 수식 분석까지, 사회는 지역 인프라 설문부터 롤스 차등 원칙 정책 설계까지 난이도별 3가지 주제로 폭넓게 확장합니다.`;
 

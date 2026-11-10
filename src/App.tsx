@@ -46,10 +46,21 @@ import {
   Edit3,
 } from 'lucide-react';
 
+const CURRENT_APP_VERSION = 'v3.0_fifteen_curriculum_database';
+
 export default function App() {
   const [currentRole, setCurrentRole] = useState<UserRole>('student');
   const [students, setStudents] = useState<Student[]>(() => {
     try {
+      const storedVer = localStorage.getItem('hakjong_app_version');
+      if (storedVer !== CURRENT_APP_VERSION) {
+        localStorage.removeItem('hakjong_students');
+        localStorage.removeItem('hakjong_roadmaps');
+        localStorage.removeItem('hakjong_records');
+        localStorage.removeItem('hakjong_custom_units');
+        localStorage.setItem('hakjong_app_version', CURRENT_APP_VERSION);
+        return mockStudents;
+      }
       const saved = localStorage.getItem('hakjong_students');
       return saved ? JSON.parse(saved) : mockStudents;
     } catch {
