@@ -315,8 +315,11 @@ export function synthesizeComprehensiveCurriculum(
 
   const interestClean = cleanInterest.length > 35 ? cleanInterest.slice(0, 32) + '...' : cleanInterest;
 
-  // Prioritize 15 Precision Academic Domains from fifteenCurriculumDatabase
-  const matchedFifteen = fifteenCurriculumDatabase.find((d) => d.detect(contextStr));
+  // Prioritize 15 Precision Academic Domains from fifteenCurriculumDatabase (match targetMajor first to avoid cross-domain keyword collisions)
+  const majorLower = cleanMajor.toLowerCase();
+  const matchedFifteen =
+    (majorLower ? fifteenCurriculumDatabase.find((d) => d.detect(majorLower)) : undefined) ||
+    fifteenCurriculumDatabase.find((d) => d.detect(contextStr));
   if (matchedFifteen) {
     majorOverview = matchedFifteen.majorOverview;
     connectionSummary = matchedFifteen.connectionSummary;

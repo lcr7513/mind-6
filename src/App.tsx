@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   UserRole,
   Student,
@@ -31,6 +31,10 @@ import { TeacherCoachingPanel } from './components/TeacherCoachingPanel';
 import { LiveChatModal } from './components/LiveChatModal';
 import { ExportReportModal } from './components/ExportReportModal';
 import { StudentCareerProfileModal } from './components/StudentCareerProfileModal';
+import { QuestionRefinementWizard } from './components/QuestionRefinementWizard';
+import { ClassroomKanbanDashboard } from './components/ClassroomKanbanDashboard';
+import { TeacherAuthModal } from './components/TeacherAuthModal';
+import { StudentRegistrationModal } from './components/StudentRegistrationModal';
 import {
   Sparkles,
   Compass,
@@ -46,7 +50,7 @@ import {
   Edit3,
 } from 'lucide-react';
 
-const CURRENT_APP_VERSION = 'v3.0_fifteen_curriculum_database';
+const CURRENT_APP_VERSION = 'v3.2_teacher_auth_student_approval';
 
 export default function App() {
   const [currentRole, setCurrentRole] = useState<UserRole>('student');
@@ -111,12 +115,56 @@ export default function App() {
     return initialRoads;
   });
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(mockChatMessages);
+  const [isGeneratingRoadmap, setIsGeneratingRoadmap] = useState<boolean>(false);
+  const [roadmapSource, setRoadmapSource] = useState<'gemini' | 'local'>('local');
 
   // Modals
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [chatActivityId, setChatActivityId] = useState<string | undefined>(undefined);
+
+  // Teacher Authentication & Student Registration State
+  const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('hakjong_teacher_auth') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isTeacherAuthModalOpen, setIsTeacherAuthModalOpen] = useState<boolean>(false);
+  const [isStudentRegistrationModalOpen, setIsStudentRegistrationModalOpen] = useState<boolean>(false);
+
+  // Read URL query parameters for student distribution links (e.g. ?register=true, ?nav=refine, ?student=id)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const modeParam = params.get('mode');
+      if (modeParam === 'student') {
+        setCurrentRole('student');
+      } else if (modeParam === 'teacher' && isTeacherAuthenticated) {
+        setCurrentRole('teacher');
+      }
+
+      const navParam = params.get('nav');
+      if (navParam && ['wizard', 'refine', 'ai-topics', 'roadmap', 'inquiry-log', 'kanban'].includes(navParam)) {
+        setActiveNav(navParam);
+      }
+
+      const registerParam = params.get('register');
+      if (registerParam === 'true' || registerParam === '1') {
+        setCurrentRole('student');
+        setIsStudentRegistrationModalOpen(true);
+      }
+
+      const studentParam = params.get('student');
+      if (studentParam && students.some((s) => s.id === studentParam)) {
+        setCurrentStudentId(studentParam);
+      }
+    } catch (e) {
+      console.error('Failed to parse URL parameters:', e);
+    }
+  }, []);
 
   const currentStudent = students.find((s) => s.id === currentStudentId) || students[0];
 
@@ -133,7 +181,7 @@ export default function App() {
       console.error(e);
     }
 
-    // 1. Automatically regenerate career roadmap milestones tailored to new career & interest
+    // 1. Optimistically set local roadmap immediately, then upgrade via live Gemini AI API
     const newMilestones = generateTailoredRoadmap(updated);
     setRoadmaps((prev) => {
       const updatedRoadmaps = {
@@ -145,6 +193,31 @@ export default function App() {
       } catch {}
       return updatedRoadmaps;
     });
+    setRoadmapSource('local');
+    setIsGeneratingRoadmap(true);
+    fetch('/api/ai/generate-roadmap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student: updated }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.milestones) && data.milestones.length > 0) {
+          setRoadmaps((prev) => {
+            const updatedRoadmaps = {
+              ...prev,
+              [updated.id]: data.milestones,
+            };
+            try {
+              localStorage.setItem('hakjong_roadmaps', JSON.stringify(updatedRoadmaps));
+            } catch {}
+            return updatedRoadmaps;
+          });
+          setRoadmapSource(data.source === 'gemini' ? 'gemini' : 'local');
+        }
+      })
+      .catch((err) => console.warn('Auto Gemini roadmap refresh failed, keeping local fallback:', err))
+      .finally(() => setIsGeneratingRoadmap(false));
 
     // 2. Automatically regenerate inquiry activity log records tailored to new career & interest
     const newRecords = generateTailoredInquiryRecords(updated);
@@ -185,19 +258,52 @@ export default function App() {
     }
   };
 
-  // Explicit handler to re-tailor Roadmap for current student
-  const handleRegenerateRoadmap = () => {
-    const newMilestones = generateTailoredRoadmap(currentStudent);
+  // Explicit handler to re-tailor Roadmap for current student via live Gemini AI
+  const handleRegenerateRoadmap = async (): Promise<'gemini' | 'local'> => {
+    setIsGeneratingRoadmap(true);
+    try {
+      const res = await fetch('/api/ai/generate-roadmap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student: currentStudent }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.milestones) && data.milestones.length > 0) {
+          setRoadmaps((prev) => {
+            const updatedRoadmaps = {
+              ...prev,
+              [currentStudent.id]: data.milestones,
+            };
+            try {
+              localStorage.setItem('hakjong_roadmaps', JSON.stringify(updatedRoadmaps));
+            } catch {}
+            return updatedRoadmaps;
+          });
+          const src = data.source === 'gemini' ? 'gemini' : 'local';
+          setRoadmapSource(src);
+          return src;
+        }
+      }
+    } catch (err) {
+      console.warn('Gemini roadmap generation error, using local fallback:', err);
+    } finally {
+      setIsGeneratingRoadmap(false);
+    }
+
+    const fallbackMilestones = generateTailoredRoadmap(currentStudent);
     setRoadmaps((prev) => {
       const updatedRoadmaps = {
         ...prev,
-        [currentStudent.id]: newMilestones,
+        [currentStudent.id]: fallbackMilestones,
       };
       try {
         localStorage.setItem('hakjong_roadmaps', JSON.stringify(updatedRoadmaps));
       } catch {}
       return updatedRoadmaps;
     });
+    setRoadmapSource('local');
+    return 'local';
   };
 
   // Explicit handler to re-tailor Inquiry Activity Records for current student
@@ -211,6 +317,163 @@ export default function App() {
       } catch {}
       return updatedRecords;
     });
+  };
+
+  // Classroom Student Management Handlers
+  const handleUpdateStudent = (updatedStudent: Student) => {
+    const updatedList = students.map((s) => (s.id === updatedStudent.id ? updatedStudent : s));
+    setStudents(updatedList);
+    try {
+      localStorage.setItem('hakjong_students', JSON.stringify(updatedList));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAddStudent = (newStudent: Student) => {
+    const updatedList = [newStudent, ...students];
+    setStudents(updatedList);
+    try {
+      localStorage.setItem('hakjong_students', JSON.stringify(updatedList));
+    } catch (e) {
+      console.error(e);
+    }
+    const newMilestones = generateTailoredRoadmap(newStudent);
+    setRoadmaps((prev) => ({ ...prev, [newStudent.id]: newMilestones }));
+    const newRecs = generateTailoredInquiryRecords(newStudent);
+    setRecords((prev) => [...newRecs, ...prev]);
+
+    fetch('/api/ai/generate-roadmap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student: newStudent }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.milestones) && data.milestones.length > 0) {
+          setRoadmaps((prev) => {
+            const updatedRoadmaps = { ...prev, [newStudent.id]: data.milestones };
+            try {
+              localStorage.setItem('hakjong_roadmaps', JSON.stringify(updatedRoadmaps));
+            } catch {}
+            return updatedRoadmaps;
+          });
+        }
+      })
+      .catch(() => {});
+  };
+
+  const handleAddMultipleStudents = (newStudents: Student[]) => {
+    const updatedList = [...newStudents, ...students];
+    setStudents(updatedList);
+    try {
+      localStorage.setItem('hakjong_students', JSON.stringify(updatedList));
+    } catch (e) {
+      console.error(e);
+    }
+    newStudents.forEach((st) => {
+      const ms = generateTailoredRoadmap(st);
+      setRoadmaps((prev) => ({ ...prev, [st.id]: ms }));
+      const recs = generateTailoredInquiryRecords(st);
+      setRecords((prev) => [...recs, ...prev]);
+    });
+  };
+
+  const handleDeleteStudent = (studentId: string) => {
+    const updatedList = students.filter((s) => s.id !== studentId);
+    if (updatedList.length > 0) {
+      setStudents(updatedList);
+      if (currentStudentId === studentId) {
+        setCurrentStudentId(updatedList[0].id);
+      }
+      try {
+        localStorage.setItem('hakjong_students', JSON.stringify(updatedList));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  // Teacher Authentication Handlers
+  const handleTeacherAuthSuccess = () => {
+    setIsTeacherAuthenticated(true);
+    try {
+      sessionStorage.setItem('hakjong_teacher_auth', 'true');
+    } catch {}
+    setIsTeacherAuthModalOpen(false);
+    setCurrentRole('teacher');
+    setActiveNav('kanban');
+  };
+
+  const handleLockTeacherMode = () => {
+    setIsTeacherAuthenticated(false);
+    try {
+      sessionStorage.removeItem('hakjong_teacher_auth');
+    } catch {}
+    setCurrentRole('student');
+    setActiveNav('wizard');
+  };
+
+  // Student Approval Handlers for Teacher
+  const handleApproveStudent = (studentId: string) => {
+    const target = students.find((s) => s.id === studentId);
+    if (!target) return;
+    const updated: Student = {
+      ...target,
+      approvalStatus: 'approved',
+      status: 'active',
+      inquiryStage: target.inquiryStage || 'topic_planning',
+      lastUpdated: new Date().toISOString().split('T')[0],
+    };
+    handleUpdateStudent(updated);
+
+    if (!roadmaps[studentId]) {
+      const ms = generateTailoredRoadmap(updated);
+      setRoadmaps((prev) => ({ ...prev, [studentId]: ms }));
+    }
+    if (!records.some((r) => r.studentId === studentId)) {
+      const recs = generateTailoredInquiryRecords(updated);
+      setRecords((prev) => [...recs, ...prev]);
+    }
+  };
+
+  const handleApproveAllStudents = () => {
+    const pending = students.filter((s) => s.approvalStatus === 'pending');
+    if (pending.length === 0) return;
+    const updatedList = students.map((s) =>
+      s.approvalStatus === 'pending'
+        ? {
+            ...s,
+            approvalStatus: 'approved' as const,
+            status: 'active' as const,
+            inquiryStage: s.inquiryStage || 'topic_planning',
+            lastUpdated: new Date().toISOString().split('T')[0],
+          }
+        : s
+    );
+    setStudents(updatedList);
+    try {
+      localStorage.setItem('hakjong_students', JSON.stringify(updatedList));
+    } catch {}
+
+    pending.forEach((st) => {
+      if (!roadmaps[st.id]) {
+        const ms = generateTailoredRoadmap(st);
+        setRoadmaps((prev) => ({ ...prev, [st.id]: ms }));
+      }
+      if (!records.some((r) => r.studentId === st.id)) {
+        const recs = generateTailoredInquiryRecords(st);
+        setRecords((prev) => [...recs, ...prev]);
+      }
+    });
+  };
+
+  const handleRejectStudent = (studentId: string) => {
+    handleDeleteStudent(studentId);
+  };
+
+  const handleStudentSubmitRegistration = (newStudent: Student) => {
+    handleAddStudent(newStudent);
   };
 
   const currentStudentMilestones = roadmaps[currentStudentId] || generateTailoredRoadmap(currentStudent);
@@ -367,8 +630,14 @@ export default function App() {
       {/* Top Navbar */}
       <Navbar
         currentRole={currentRole}
-        onChangeRole={(role) => setCurrentRole(role)}
-        students={students}
+        onChangeRole={(role) => {
+          if (role === 'teacher' && !isTeacherAuthenticated) {
+            setIsTeacherAuthModalOpen(true);
+          } else {
+            setCurrentRole(role);
+          }
+        }}
+        students={students.filter((s) => s.approvalStatus !== 'pending')}
         currentStudentId={currentStudentId}
         onSelectStudent={(id) => setCurrentStudentId(id)}
         teacher={teacher}
@@ -380,6 +649,11 @@ export default function App() {
         }}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onOpenProfile={() => setIsProfileModalOpen(true)}
+        onOpenStudentRegistration={() => setIsStudentRegistrationModalOpen(true)}
+        isTeacherAuthenticated={isTeacherAuthenticated}
+        onRequestTeacherAuth={() => setIsTeacherAuthModalOpen(true)}
+        onLockTeacherMode={handleLockTeacherMode}
+        pendingStudentsCount={students.filter((s) => s.approvalStatus === 'pending').length}
       />
 
       {/* Main Content Area */}
@@ -399,7 +673,7 @@ export default function App() {
               <span className="text-slate-500 ml-2">
                 {currentRole === 'student'
                   ? `${currentStudent.name} (${currentStudent.grade} · ${currentStudent.targetMajor})`
-                  : `${teacher.name} 교사 (${teacher.role} · 한국과학예술고)`}
+                  : `${teacher.name} 선생님 (${teacher.subject} · ${teacher.school})`}
               </span>
             </div>
           </div>
@@ -509,6 +783,22 @@ export default function App() {
             currentStudent={currentStudent}
             onAddInquiryRecord={handleAddInquiryFromTopic}
             onSwitchToMindmap={() => setActiveNav('ai-topics')}
+            onSwitchToRefinement={() => setActiveNav('refinement')}
+          />
+        )}
+
+        {/* Tab: Topic Refinement & Question Narrowing 3-Step Wizard */}
+        {activeNav === 'refinement' && (
+          <QuestionRefinementWizard
+            student={currentStudent}
+            onAddActivityRecord={(rec) => {
+              handleAddRecord(rec as any);
+              setActiveNav('inquiry-logs');
+            }}
+            onNavigateToMindmap={(_topic) => {
+              setActiveNav('ai-topics');
+            }}
+            onOpenProfile={() => setIsProfileModalOpen(true)}
           />
         )}
 
@@ -523,6 +813,7 @@ export default function App() {
             onApplyMindMap={handleApplyMindMap}
             onAddInquiryRecord={handleAddInquiryFromTopic}
             onSwitchToWizard={() => setActiveNav('wizard')}
+            onSwitchToRefinement={() => setActiveNav('refinement')}
           />
         )}
 
@@ -534,6 +825,8 @@ export default function App() {
             onAddMilestone={handleAddMilestone}
             onUpdateStatus={handleUpdateMilestoneStatus}
             onRegenerateRoadmap={handleRegenerateRoadmap}
+            isGeneratingRoadmap={isGeneratingRoadmap}
+            roadmapSource={roadmapSource}
             onOpenProfile={() => setIsProfileModalOpen(true)}
           />
         )}
@@ -561,6 +854,34 @@ export default function App() {
             records={records}
             onSaveFeedback={handleSaveTeacherFeedback}
             onOpenChatWithStudent={handleOpenChatWithStudent}
+          />
+        )}
+
+        {/* Tab 5: Classroom Kanban Dashboard (교사 전용 학급 다중 관리 칸반) */}
+        {activeNav === 'kanban' && (
+          <ClassroomKanbanDashboard
+            teacher={teacher}
+            students={students}
+            records={records}
+            onSelectStudent={(id) => {
+              setCurrentStudentId(id);
+            }}
+            onUpdateStudent={handleUpdateStudent}
+            onAddStudent={handleAddStudent}
+            onAddMultipleStudents={handleAddMultipleStudents}
+            onDeleteStudent={handleDeleteStudent}
+            onNavigateToCoaching={(id) => {
+              setCurrentStudentId(id);
+              setActiveNav('teacher-panel');
+            }}
+            onNavigateToRefinement={(id) => {
+              setCurrentStudentId(id);
+              setActiveNav('refinement');
+            }}
+            onApproveStudent={handleApproveStudent}
+            onApproveAllStudents={handleApproveAllStudents}
+            onRejectStudent={handleRejectStudent}
+            onLockTeacherMode={handleLockTeacherMode}
           />
         )}
       </main>
@@ -607,6 +928,22 @@ export default function App() {
         onClose={() => setIsProfileModalOpen(false)}
         student={currentStudent}
         onSaveProfile={handleSaveStudentProfile}
+      />
+
+      {/* Teacher Authentication Modal (비밀번호 1234) */}
+      <TeacherAuthModal
+        isOpen={isTeacherAuthModalOpen}
+        onClose={() => setIsTeacherAuthModalOpen(false)}
+        onSuccess={handleTeacherAuthSuccess}
+        teacher={teacher}
+      />
+
+      {/* Student Self-Registration Modal (학생 학급 참여 신청) */}
+      <StudentRegistrationModal
+        isOpen={isStudentRegistrationModalOpen}
+        onClose={() => setIsStudentRegistrationModalOpen(false)}
+        onSubmit={handleStudentSubmitRegistration}
+        teacher={teacher}
       />
     </div>
   );

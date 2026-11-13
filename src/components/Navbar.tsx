@@ -11,6 +11,11 @@ import {
   ChevronDown,
   Lightbulb,
   Edit3,
+  Target,
+  LayoutGrid,
+  UserPlus,
+  Lock,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -26,6 +31,11 @@ interface NavbarProps {
   onOpenExportModal: () => void;
   onOpenProfile?: () => void;
   unreadCount?: number;
+  onOpenStudentRegistration?: () => void;
+  isTeacherAuthenticated?: boolean;
+  onRequestTeacherAuth?: () => void;
+  onLockTeacherMode?: () => void;
+  pendingStudentsCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -41,6 +51,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenExportModal,
   onOpenProfile,
   unreadCount = 2,
+  onOpenStudentRegistration,
+  isTeacherAuthenticated = false,
+  onRequestTeacherAuth,
+  onLockTeacherMode: _onLockTeacherMode,
+  pendingStudentsCount = 0,
 }) => {
   const currentStudent = students.find((s) => s.id === currentStudentId) || students[0];
 
@@ -100,6 +115,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span className="whitespace-nowrap">관심사 설정</span>
                   </button>
                 )}
+
+                {onOpenStudentRegistration && (
+                  <button
+                    type="button"
+                    onClick={onOpenStudentRegistration}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 transition-colors shadow-2xs whitespace-nowrap cursor-pointer"
+                    title="이창렬 선생님 학급에 신규 학생 참여 신청서 제출"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="whitespace-nowrap">학급 참여 신청</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -120,17 +147,33 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  onChangeRole('teacher');
-                  onSelectNav('teacher-panel');
+                  if (isTeacherAuthenticated) {
+                    onChangeRole('teacher');
+                    onSelectNav('kanban');
+                  } else if (onRequestTeacherAuth) {
+                    onRequestTeacherAuth();
+                  } else {
+                    onChangeRole('teacher');
+                    onSelectNav('kanban');
+                  }
                 }}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   currentRole === 'teacher'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
+                title={isTeacherAuthenticated ? '교사 관리 모드' : '교사 관리자 비밀번호 인증 필요'}
               >
                 <Users className="w-3.5 h-3.5" />
                 <span>교사 모드</span>
+                {!isTeacherAuthenticated && (
+                  <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                )}
+                {pendingStudentsCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-500 text-white animate-pulse">
+                    {pendingStudentsCount}
+                  </span>
+                )}
               </button>
             </div>
 
@@ -181,6 +224,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 AI 추천
+              </span>
+            </button>
+
+            {/* Tab: 질문 좁히기 3단계 (주제 지도) */}
+            <button
+              type="button"
+              onClick={() => onSelectNav('refinement')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
+                activeNav === 'refinement'
+                  ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
+                  : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-indigo-700 border border-slate-200/80'
+              }`}
+            >
+              <Target className={`w-4 h-4 ${activeNav === 'refinement' ? 'text-amber-300' : 'text-emerald-600'}`} />
+              <span>질문 좁히기 3단계</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                  activeNav === 'refinement' ? 'bg-white text-indigo-700' : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
+                주제 지도
               </span>
             </button>
 
@@ -247,23 +311,47 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </button>
 
-            {/* Tab 5: 교사 지도·첨삭 대시보드 (교사 모드일 때 활성화) */}
+            {/* Tab 5: 학급 관리 칸반 및 교사 지도 대시보드 (교사 모드일 때 활성화) */}
             {currentRole === 'teacher' && (
-              <button
-                type="button"
-                onClick={() => onSelectNav('teacher-panel')}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-                  activeNav === 'teacher-panel'
-                    ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
-                    : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200'
-                }`}
-              >
-                <Users className="w-4 h-4 text-amber-600" />
-                <span>교사 지도·첨삭 대시보드</span>
-                <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-full font-extrabold">
-                  실시간 첨삭
-                </span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => onSelectNav('kanban')}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
+                    activeNav === 'kanban'
+                      ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
+                      : 'bg-emerald-50 text-emerald-900 hover:bg-emerald-100 border border-emerald-200'
+                  }`}
+                >
+                  <LayoutGrid className="w-4 h-4 text-emerald-600" />
+                  <span>학급 관리 칸반</span>
+                  {pendingStudentsCount > 0 ? (
+                    <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-black animate-pulse">
+                      대기 {pendingStudentsCount}명
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-emerald-200 text-emerald-900 px-1.5 py-0.2 rounded-full font-extrabold">
+                      진행 모니터링
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onSelectNav('teacher-panel')}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
+                    activeNav === 'teacher-panel'
+                      ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
+                      : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200'
+                  }`}
+                >
+                  <Users className="w-4 h-4 text-amber-600" />
+                  <span>1:1 세특 첨삭 패널</span>
+                  <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-full font-extrabold">
+                    실시간 첨삭
+                  </span>
+                </button>
+              </>
             )}
           </nav>
         </div>

@@ -2,6 +2,10 @@ export type UserRole = 'student' | 'teacher';
 
 export type SubjectCategory = 'math' | 'science' | 'korean' | 'social' | 'english' | 'tech';
 
+export type InquiryStage = 'topic_planning' | 'in_progress' | 'submitted' | 'finalized';
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+
 export interface Student {
   id: string;
   name: string;
@@ -16,6 +20,12 @@ export interface Student {
   mainInterestTopic?: string;
   preferredSubjects?: string[];
   onboardingCompleted?: boolean;
+  inquiryStage?: InquiryStage;
+  methodologyTool?: string;
+  lastUpdated?: string;
+  approvalStatus?: ApprovalStatus;
+  appliedAt?: string;
+  appliedMessage?: string;
 }
 
 export interface Teacher {
@@ -230,5 +240,29 @@ export interface InquiryPlanProposal {
     originalInsight: boolean;
     continuousGrowth: boolean;
   };
+}
+
+export interface RefinedQuestion {
+  id: string;
+  type: 'hypothesis' | 'modeling' | 'critical';
+  typeLabel: string;
+  title: string;
+  question: string;
+  hypothesis: string;
+  variables?: {
+    independent: string;
+    dependent: string;
+    control: string;
+  };
+  stepByStepProcedure: string[];
+  recommendedDataOrTools: string[];
+  curriculumAchievementCode: string;
+  expectedDraftRecordSnippet: string;
+}
+
+export interface QuestionRefinementResult {
+  synthesizedAcademicTopic?: string;
+  adviceForStudent: string;
+  refinedQuestions: RefinedQuestion[];
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Student,
   SubjectInquiryTopic,
@@ -14,7 +14,8 @@ import {
   clicheDatabase,
   majorTrackCategories,
 } from '../data/curriculumData';
-import { synthesizeComprehensiveCurriculum, ComprehensiveSubjectPlan } from '../data/curriculumSynthesizer';
+import { synthesizeComprehensiveCurriculum } from '../data/curriculumSynthesizer';
+import { AcademicSearchGuide } from './AcademicSearchGuide';
 import {
   Sparkles,
   BookOpen,
@@ -199,6 +200,66 @@ export function findBestTrackForStudent(student: Student): string {
   return 'track-bio-health';
 }
 
+export function getGrade1CommonSubjectByCategory(cat: string): string {
+  switch (cat) {
+    case 'math':
+      return '공통수학1 · 공통수학2';
+    case 'science':
+      return '통합과학1 · 통합과학2';
+    case 'social':
+      return '통합사회1 · 통합사회2';
+    case 'korean':
+      return '공통국어1 · 공통국어2';
+    case 'english':
+      return '공통영어1 · 공통영어2';
+    case 'tech':
+      return '정보';
+    default:
+      return '공통교과';
+  }
+}
+
+export function getGrade3ElectiveSubjectByCategory(cat: string): string {
+  switch (cat) {
+    case 'math':
+      return '심화수학 / 인공지능 수학 / 수학과제탐구';
+    case 'science':
+      return '과학과제연구 / 융합과학탐구 / 고급과학';
+    case 'social':
+      return '사회문제탐구 / 국제관계와 국제기구';
+    case 'korean':
+      return '매체 의사소통 / 심화국어 / 고전읽기';
+    case 'english':
+      return '심화영어독해 / 영미문학읽기 / 직무영어';
+    case 'tech':
+      return '인공지능 기초 / 데이터 과학 / 소프트웨어와 생활';
+    default:
+      return '진로선택 심화과목';
+  }
+}
+
+export function isSubjectMatchingCategory(subjectName: string, cat: string): boolean {
+  const raw = String(subjectName || '').trim();
+  if (!raw) return true;
+  const head = raw.split('/')[0].trim();
+  switch (cat) {
+    case 'math':
+      return /수학|미적분|확률|통계|기하|대수/.test(head) && !/생명과학|통합사회|영어|국어/.test(head);
+    case 'science':
+      return /과학|물리|화학|생명|지구|생물/.test(head) && !/^정보|통합사회|영어|국어/.test(head);
+    case 'social':
+      return /사회|윤리|경제|정치|법|지리|역사|문화/.test(head) && !/생명과학|물리학|영어|국어|미적분/.test(head);
+    case 'korean':
+      return /국어|독서|문학|화법|작문|언어|매체|고전/.test(head) && !/영어|영미|생명과학|미적분|통합사회/.test(head);
+    case 'english':
+      return /영어|영미|영문|english/i.test(head) && !/국어|생명과학|미적분|통합사회|물리학/.test(head);
+    case 'tech':
+      return /정보|인공지능|ai|프로그래밍|데이터|공학|컴퓨터|소프트웨어|알고리즘|로봇/i.test(head) && !/영어|국어|통합사회|생명과학/.test(head);
+    default:
+      return true;
+  }
+}
+
 // Helper: Synthesize full tailored 5-step plan for student & unit
 export function getTailoredPlanForStudent(student: Student, unit: CurriculumUnit) {
   const career = student.targetCareer || '전문 연구원';
@@ -264,9 +325,9 @@ export function getTailoredPlanForStudent(student: Student, unit: CurriculumUnit
     {
       grade: '1학년 (기초 소양)',
       stageName: '기초 개념 정립 및 문제의식 발굴',
-      subject: '통합과학 / 통합사회 / 공통수학',
+      subject: getGrade1CommonSubjectByCategory(unit.subjectCategory),
       focus: '일상적 현상에서 교과 기본 법칙과 호기심 발견',
-      topicIdea: `${interest.slice(0, 15)} 관련 기초 개념 조사 및 실생활 적용 현황 보고서 작성`,
+      topicIdea: `[${getGrade1CommonSubjectByCategory(unit.subjectCategory)}] ${interest.slice(0, 15)} 관련 기초 개념 조사 및 실생활 적용 보고서 작성`,
       connectionReason: '고교 1학년 공통 교육과정의 기본 성취기준을 성실히 이수했음을 입증',
     },
     {
@@ -280,9 +341,9 @@ export function getTailoredPlanForStudent(student: Student, unit: CurriculumUnit
     {
       grade: '3학년 (융합 발전)',
       stageName: '차년도 후속 심화 및 융합 과제',
-      subject: '진로선택과목 / 생활과 윤리 / 융합과학탐구',
-      focus: '한계점 극복, 정책 제언, 다학제간 융합 모델링',
-      topicIdea: `${topicTitle.split(']')[1] || topicTitle}의 현실 적용 한계 보완 및 제도적·윤리적 가이드라인 연구`,
+      subject: getGrade3ElectiveSubjectByCategory(unit.subjectCategory),
+      focus: '한계점 극복, 정책 제언, 심화 모델링 확장',
+      topicIdea: `${topicTitle.split(']')[1] || topicTitle}의 현실 적용 한계 보완 및 심화 확장 연구`,
       connectionReason: '단발성 탐구로 끝나지 않고 3개년 동안 학문적 성장이 꼬리를 물고 이어지는 연속성 증명',
     },
   ];
@@ -331,9 +392,10 @@ interface CurriculumInquiryWizardProps {
   currentStudent: Student;
   onAddInquiryRecord: (topic: SubjectInquiryTopic) => void;
   onSwitchToMindmap?: () => void;
+  onSwitchToRefinement?: () => void;
 }
 
-// Client-side initial tailored units generator for all 6 subjects
+// Client-side initial tailored units generator for all 6 subjects (strictly 2 basic + 1 advanced per subject)
 export function generateInitialTailoredUnits(student: Student): CurriculumUnit[] {
   const synthesis = synthesizeComprehensiveCurriculum({
     interest: student.mainInterestTopic || '교과 연계 첨단 기술 쟁점',
@@ -346,100 +408,151 @@ export function generateInitialTailoredUnits(student: Student): CurriculumUnit[]
   const targetMajor = student.targetMajor || '자연과학/공학 계열';
   const interest = student.mainInterestTopic || '교과 연계 첨단 기술 쟁점';
 
-  return synthesis.subjects.map((sub, idx) => {
-    const unitName = sub.unitName || sub.topic;
-    const concepts = sub.curriculumConcept
-      ? sub.curriculumConcept.split(/[/,·]/).map((c) => c.trim()).filter(Boolean).slice(0, 4)
-      : ['핵심 교과 개념', '심화 원리'];
+  const orderedCategories: CurriculumUnit['subjectCategory'][] = [
+    'math',
+    'science',
+    'social',
+    'korean',
+    'english',
+    'tech',
+  ];
 
-    const recMethod: MethodologyType =
-      sub.subjectCategory === 'social' || sub.subjectCategory === 'tech'
-        ? 'public_data'
-        : sub.subjectCategory === 'korean' || sub.subjectCategory === 'english'
-        ? 'literature'
-        : 'simulation';
+  const results: CurriculumUnit[] = [];
 
-    const samplePhenomena = [
-      `${unitName} 적용 시 관측되는 실세계 시스템의 비선형적 상호작용과 오차 요인`,
-      `${(sub.recommendedTools || []).slice(0, 2).join(' 및 ') || '분석 도구'}를 활용한 정량 데이터 수집 및 비교 분석`,
-      `교과 핵심 개념(${concepts[0] || '기본 이론'})에 기반한 가설 검증과 대안 도출`,
-    ];
+  orderedCategories.forEach((cat) => {
+    const catSubjects = synthesis.subjects.filter(
+      (s) => s.subjectCategory === cat && isSubjectMatchingCategory(s.subject, cat)
+    );
+    const basics = catSubjects.filter((s) => s.level !== 'advanced');
+    const advs = catSubjects.filter((s) => s.level === 'advanced');
 
-    const snowballRoadmap: SnowballStep[] = [
-      {
-        grade: '1학년 (기초 소양)',
-        stageName: '기초 개념 정립 및 문제의식 발굴',
-        subject: '통합사회 / 통합과학 / 공통수학',
-        focus: '일상적 현상에서 교과 기본 법칙과 호기심 발견',
-        topicIdea: `${interest.slice(0, 18)} 관련 기초 통계 조사 및 교과서 기본 성취기준 분석`,
-        connectionReason: '공통 교육과정의 기본 성취기준을 충실히 이수했음을 입증',
-      },
-      {
-        grade: '2학년 (전공 심화)',
-        stageName: '현재 탐구 과제 (선택 과목 정밀 연계)',
-        subject: sub.subject,
-        focus: '정량적 모델링, 데이터 실증 또는 비판적 담론 분석',
-        topicIdea: sub.topic,
-        connectionReason: `${unitName}의 핵심 이론을 진로 쟁점과 유기적으로 결합하여 검증`,
-      },
-      {
-        grade: '3학년 (융합 발전)',
-        stageName: '차년도 후속 심화 및 융합 과제',
-        subject: '진로선택과목 / 융합과학탐구 / 생활과 윤리',
-        focus: '다학제적 확장, 정책 제언, 제도적 가이드라인 연구',
-        topicIdea: `${sub.topic.slice(0, 26)}의 현실 적용 한계 보완 및 윤리적·제도적 가이드라인 연구`,
-        connectionReason: '단발성 탐구로 끝나지 않고 3개년 동안 학문적 성장이 꼬리를 물고 이어지는 연속성 증명',
-      },
-    ];
+    const slotItems: { sub: SubjectInquiryTopic; slotLevel: 'basic' | 'advanced'; slotIdx: number }[] = [];
+    if (basics[0]) slotItems.push({ sub: basics[0], slotLevel: 'basic', slotIdx: 0 });
+    else if (catSubjects[0]) slotItems.push({ sub: catSubjects[0], slotLevel: 'basic', slotIdx: 0 });
 
-    return {
-      id: `tailored-${sub.subjectCategory || idx}`,
-      subjectName: sub.subject,
-      subjectCategory: sub.subjectCategory,
-      gradeLevel: '고2' as const,
-      semester: idx % 2 === 0 ? '1학기' : '2학기',
-      unitName: unitName,
-      unitConcepts: concepts,
-      keyPrinciples: sub.connectionRationale || `${unitName}을 바탕으로 실세계 문제를 교과 원리로 분석하고 정량적/비판적으로 검증하는 심화 탐구`,
-      samplePhenomena: samplePhenomena,
-      isTailored: true,
-      tailoredPlan: {
-        topicTitle: sub.topic,
-        inquiryQuestion: sub.inquiryQuestion,
-        observedPhenomenon: samplePhenomena[0],
-        phenomenaChips: samplePhenomena,
-        selectedLens: concepts[0] || '교과 핵심 렌즈',
-        lensOptions: concepts.length > 0 ? concepts : ['원리 적용 렌즈', '비판적 검증 렌즈', '제도적 대안 렌즈'],
-        questionOptions: [
-          sub.inquiryQuestion,
-          `${unitName} 관점에서 기존 접근법이 갖는 구조적 한계와 이를 극복할 핵심 변인은 무엇인가?`,
-          `${(sub.recommendedTools || [])[0] || '공공 데이터'}를 활용하여 현상의 인과관계를 수학적/실증적으로 입증하는 방법은 무엇인가?`,
-        ],
-        recMethod: recMethod,
-        clicheTwist: {
-          approach: '선행 이론의 단편적 수용을 넘어 정량적 데이터 실증 및 비판적 반증 체계 확립',
-          subTopic: sub.topic,
-          academicLens: concepts[0] || '핵심 교과 개념',
+    if (basics[1]) slotItems.push({ sub: basics[1], slotLevel: 'basic', slotIdx: 1 });
+    else if (catSubjects[1]) slotItems.push({ sub: catSubjects[1], slotLevel: 'basic', slotIdx: 1 });
+
+    if (advs[0]) slotItems.push({ sub: advs[0], slotLevel: 'advanced', slotIdx: 2 });
+    else if (catSubjects[2]) slotItems.push({ sub: catSubjects[2], slotLevel: 'advanced', slotIdx: 2 });
+
+    slotItems.forEach(({ sub, slotLevel, slotIdx }) => {
+      const unitName = sub.unitName || sub.topic;
+      const concepts = sub.curriculumConcept
+        ? sub.curriculumConcept.split(/[/,·]/).map((c) => c.trim()).filter(Boolean).slice(0, 4)
+        : ['핵심 교과 개념', '심화 원리'];
+
+      const recMethod: MethodologyType =
+        cat === 'social' || cat === 'tech'
+          ? 'public_data'
+          : cat === 'korean' || cat === 'english'
+          ? 'literature'
+          : 'simulation';
+
+      const samplePhenomena = [
+        `${unitName} 적용 시 관측되는 실세계 시스템의 상호작용과 핵심 변인 분석`,
+        `${(sub.recommendedTools || []).slice(0, 2).join(' 및 ') || '교과 분석 도구'}를 활용한 자료 수집 및 비교 검증`,
+        `교과 핵심 개념(${concepts[0] || '기본 이론'})에 기반한 가설 검증과 대안 도출`,
+      ];
+
+      const snowballRoadmap: SnowballStep[] = [
+        {
+          grade: '1학년 (기초 소양)',
+          stageName: '기초 개념 정립 및 문제의식 발굴',
+          subject: getGrade1CommonSubjectByCategory(cat),
+          focus: '일상적 현상에서 교과 기본 법칙과 호기심 발견',
+          topicIdea: `[${getGrade1CommonSubjectByCategory(cat)}] ${interest.slice(0, 18)} 관련 기초 조사 및 교과서 기본 성취기준 분석`,
+          connectionReason: '공통 교육과정의 기본 성취기준을 충실히 이수했음을 입증',
+        },
+        {
+          grade: '2학년 (전공 심화)',
+          stageName: '현재 탐구 과제 (선택 과목 정밀 연계)',
+          subject: sub.subject,
+          focus: '정량적 모델링, 데이터 실증 또는 비판적 담론 분석',
+          topicIdea: sub.topic,
+          connectionReason: `${unitName}의 핵심 이론을 진로 쟁점과 유기적으로 결합하여 검증`,
+        },
+        {
+          grade: '3학년 (융합 발전)',
+          stageName: '차년도 후속 심화 및 융합 과제',
+          subject: getGrade3ElectiveSubjectByCategory(cat),
+          focus: '심화 확장, 정책·학술 제언, 후속 과제 연구',
+          topicIdea: `${sub.topic.slice(0, 26)}의 현실 적용 한계 보완 및 심화 확장 연구`,
+          connectionReason: '단발성 탐구로 끝나지 않고 3개년 동안 학문적 성장이 꼬리를 물고 이어지는 연속성 증명',
+        },
+      ];
+
+      const unitObj: CurriculumUnit & {
+        level?: 'basic' | 'advanced';
+        difficultyRating?: number;
+        suitability?: string;
+        isTailored?: boolean;
+      } = {
+        id: `tailored-${cat}-${slotIdx}`,
+        subjectName: sub.subject,
+        subjectCategory: cat,
+        gradeLevel: slotLevel === 'advanced' ? '고3' : '고2',
+        semester: slotIdx % 2 === 0 ? '1학기' : '2학기',
+        unitName: unitName,
+        unitConcepts: concepts,
+        keyPrinciples:
+          sub.connectionRationale ||
+          `${unitName}을 바탕으로 실세계 문제를 ${sub.subject} 교과 원리로 분석하고 검증하는 탐구`,
+        samplePhenomena: samplePhenomena,
+        level: slotLevel,
+        difficultyRating: sub.difficultyRating || (slotLevel === 'advanced' ? 5 : slotIdx === 0 ? 2 : 3),
+        suitability:
+          sub.suitability ||
+          (slotLevel === 'advanced'
+            ? '고2~3 전공 심화 · 정량 모델링 추천'
+            : '고1~2 교과서 핵심 개념 중심'),
+        isTailored: true,
+        tailoredPlan: {
+          topicTitle: sub.topic,
           inquiryQuestion: sub.inquiryQuestion,
+          observedPhenomenon: samplePhenomena[0],
+          phenomenaChips: samplePhenomena,
+          selectedLens: concepts[0] || '교과 핵심 렌즈',
+          lensOptions:
+            concepts.length > 0
+              ? concepts
+              : ['교과 원리 적용 렌즈', '비판적 검증 렌즈', '심화 대안 도출 렌즈'],
+          questionOptions: [
+            sub.inquiryQuestion,
+            `${unitName} 관점에서 기존 접근법이 갖는 구조적 한계와 이를 극복할 핵심 변인은 무엇인가?`,
+            `${(sub.recommendedTools || [])[0] || '교과 분석 도구'}를 활용하여 현상의 인과관계를 ${sub.subject} 원리로 입증하는 방법은 무엇인가?`,
+          ],
+          recMethod: recMethod,
+          clicheTwist: {
+            approach: '선행 이론의 단편적 수용을 넘어 교과 핵심 원리 기반 실증 및 비판적 분석 확립',
+            subTopic: sub.topic,
+            academicLens: concepts[0] || '핵심 교과 개념',
+            inquiryQuestion: sub.inquiryQuestion,
+          },
+          motivation: `교과 수업 중 [${sub.subject} - ${unitName}] 단원을 학습하며 교과서 이론이 실세계에 적용될 때 마주하는 한계점에 지적 호기심을 갖게 됨. 평소 희망해 온 '${targetCareer}' 진로와 목표 학과인 '${targetMajor}' 관점에서, 최근 큰 관심을 두고 있던 '${interest}' 문제를 ${sub.subject} 핵심 개념(${concepts.slice(0, 2).join(', ')})과 결합하여 자기주도적으로 깊이 있게 분석해보고자 연구 주제를 기획함.`,
+          snowballRoadmap: snowballRoadmap,
+          teacherReviewPoints: {
+            academic: sub.recordTip || `${sub.subject}의 핵심 개념을 정확히 이해하고 학업적 깊이를 증명함`,
+            career: `'${targetCareer}'에 필요한 전공 탐구 태도와 비판적 사고력을 명확히 입증`,
+            community: '연구 성과가 사회에 미치는 파급효과와 책임을 함께 모색하는 성숙한 공동체 의식',
+          },
+          relatedBooks: sub.readingRecommendation || '《통섭》(에드워드 윌슨)',
+          deliverables: sub.methodology || '탐구 보고서 및 분석 산출물',
         },
-        motivation: `교과 수업 중 [${sub.subject} - ${unitName}] 단원을 학습하며 교과서 이론이 실세계 시스템에 적용될 때 마주하는 한계점에 지적 호기심을 갖게 됨. 평소 희망해 온 '${targetCareer}' 진로와 목표 학과인 '${targetMajor}' 관점에서, 최근 큰 관심을 두고 있던 '${interest}' 문제를 교과 핵심 개념(${concepts.slice(0, 2).join(', ')})과 결합하여 자기주도적으로 깊이 있게 분석해보고자 연구 주제를 기획함.`,
-        snowballRoadmap: snowballRoadmap,
-        teacherReviewPoints: {
-          academic: sub.recordTip || `${sub.subject}의 핵심 개념을 정확히 이해하고 학업적 깊이를 증명함`,
-          career: `'${targetCareer}'에 필요한 전공 탐구 태도와 비판적 사고력을 명확히 입증`,
-          community: '연구 성과가 사회에 미치는 파급효과와 윤리적 책임을 함께 모색하는 성숙한 공동체 의식',
-        },
-        relatedBooks: sub.readingRecommendation || '《통섭》(에드워드 윌슨)',
-        deliverables: sub.methodology || '탐구 보고서 및 분석 산출물',
-      },
-    };
+      };
+
+      results.push(unitObj);
+    });
   });
+
+  return results;
 }
 
 export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = ({
   currentStudent,
   onAddInquiryRecord,
   onSwitchToMindmap,
+  onSwitchToRefinement,
 }) => {
   // Wizard Step (1: 단원/진로 매칭 -> 2: 질문 퍼널 -> 3: 클리셰 탈출 -> 4: 방법론 -> 5: 1페이지 기획서 & 체크리스트)
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -498,6 +611,12 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
   const [targetMajor, setTargetMajor] = useState<string>(currentStudent.targetMajor || '생명공학과 / 의생명과학');
   const [selectedTrackId, setSelectedTrackId] = useState<string>(findBestTrackForStudent(currentStudent));
 
+  // Refs to prevent stale async closures when switching subject tabs while Gemini is loading
+  const selectedCategoryRef = useRef<string>(selectedCategory);
+  selectedCategoryRef.current = selectedCategory;
+  const selectedTopicIndexRef = useRef<number | null>(null);
+  const fetchReqIdRef = useRef<number>(0);
+
   // Synthesized comprehensive tailored inquiry topics for student profile
   const synthesizedData = useMemo(() => {
     return synthesizeComprehensiveCurriculum({
@@ -514,10 +633,125 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
     (currentStudent.interestKeywords || []).join(','),
   ]);
 
-  // 3 tailored inquiry topics (2 basic, 1 advanced) for the selected category
-  const currentSubjectTopics = useMemo(() => {
-    return synthesizedData.subjects.filter((sub) => sub.subjectCategory === selectedCategory);
-  }, [synthesizedData, selectedCategory]);
+  // AI Tailored Curriculum status
+  const [isLoadingCurriculum, setIsLoadingCurriculum] = useState<boolean>(false);
+  const [curriculumAiSource, setCurriculumAiSource] = useState<'gemini' | 'database' | null>(null);
+
+  // Strictly 3 tailored inquiry topics (2 basic, 1 advanced) exclusively for selectedCategory
+  const currentSubjectTopics = useMemo<SubjectInquiryTopic[]>(() => {
+    const mapUnitToTopic = (u: any, level: 'basic' | 'advanced', slotIdx: number): SubjectInquiryTopic => {
+      const plan = u.tailoredPlan || {};
+      return {
+        id: u.id || `topic-${selectedCategory}-${slotIdx}`,
+        subject: u.subjectName,
+        subjectCategory: u.subjectCategory,
+        level,
+        difficultyRating: u.difficultyRating || (level === 'advanced' ? 5 : slotIdx === 0 ? 2 : 3),
+        suitability:
+          u.suitability ||
+          (level === 'advanced'
+            ? '고2~3 전공 심화 · 정량 모델링 추천'
+            : '고1~2 교과서 핵심 개념 중심'),
+        topic: plan.topicTitle || u.unitName,
+        inquiryQuestion: plan.inquiryQuestion || u.samplePhenomena?.[0] || u.keyPrinciples,
+        methodology: plan.deliverables || '공공데이터·정량 모델링 및 탐구 보고서',
+        readingRecommendation: plan.relatedBooks || '',
+        recordTip: plan.teacherReviewPoints?.academic || u.keyPrinciples,
+        curriculumConcept: (u.unitConcepts || []).join(' · '),
+        connectionRationale: u.keyPrinciples,
+      };
+    };
+
+    const matchingUnits = tailoredUnits.filter(
+      (u) => u.subjectCategory === selectedCategory && isSubjectMatchingCategory(u.subjectName, selectedCategory)
+    );
+    const fallbackPool = synthesizedData.subjects.filter(
+      (sub) => sub.subjectCategory === selectedCategory && isSubjectMatchingCategory(sub.subject, selectedCategory)
+    );
+
+    const unitBasics = matchingUnits.filter((u: any) => u.level !== 'advanced');
+    const unitAdvs = matchingUnits.filter((u: any) => u.level === 'advanced');
+    const fallbackBasics = fallbackPool.filter((s) => s.level !== 'advanced');
+    const fallbackAdvs = fallbackPool.filter((s) => s.level === 'advanced');
+
+    const picked: SubjectInquiryTopic[] = [];
+    const usedIds = new Set<string>();
+    const usedTitles = new Set<string>();
+
+    const pushUnique = (item: SubjectInquiryTopic, slotIdx: number) => {
+      const safeId = usedIds.has(item.id) ? `${item.id}-slot-${slotIdx}` : item.id;
+      usedIds.add(safeId);
+      usedTitles.add(item.topic);
+      picked.push({ ...item, id: safeId });
+    };
+
+    // Slot 0 & Slot 1: 2 Basic topics
+    for (const u of unitBasics) {
+      if (picked.length >= 2) break;
+      const mapped = mapUnitToTopic(u, 'basic', picked.length);
+      if (!usedTitles.has(mapped.topic)) {
+        pushUnique(mapped, picked.length);
+      }
+    }
+    for (const fb of fallbackBasics) {
+      if (picked.length >= 2) break;
+      if (!usedTitles.has(fb.topic)) {
+        pushUnique(
+          {
+            ...fb,
+            id: `synth-${selectedCategory}-basic-${picked.length}`,
+            level: 'basic',
+          },
+          picked.length
+        );
+      }
+    }
+    // If matchingUnits had 3 items without explicit level tags, use remaining before advanced
+    for (const u of matchingUnits) {
+      if (picked.length >= 2) break;
+      const mapped = mapUnitToTopic(u, 'basic', picked.length);
+      if (!usedTitles.has(mapped.topic)) {
+        pushUnique(mapped, picked.length);
+      }
+    }
+
+    // Slot 2: 1 Advanced topic
+    let addedAdvanced = false;
+    for (const u of unitAdvs) {
+      const mapped = mapUnitToTopic(u, 'advanced', 2);
+      if (!usedTitles.has(mapped.topic)) {
+        pushUnique(mapped, 2);
+        addedAdvanced = true;
+        break;
+      }
+    }
+    if (!addedAdvanced && matchingUnits.length >= 3) {
+      const candidate = matchingUnits[matchingUnits.length - 1];
+      const mapped = mapUnitToTopic(candidate, 'advanced', 2);
+      if (!usedTitles.has(mapped.topic)) {
+        pushUnique(mapped, 2);
+        addedAdvanced = true;
+      }
+    }
+    if (!addedAdvanced) {
+      for (const fb of [...fallbackAdvs, ...fallbackPool]) {
+        if (!usedTitles.has(fb.topic)) {
+          pushUnique(
+            {
+              ...fb,
+              id: `synth-${selectedCategory}-adv-2`,
+              level: 'advanced',
+              difficultyRating: fb.difficultyRating || 5,
+            },
+            2
+          );
+          break;
+        }
+      }
+    }
+
+    return picked;
+  }, [tailoredUnits, synthesizedData, selectedCategory]);
 
   const selectedCategoryLabel =
     selectedCategory === 'math'
@@ -532,12 +766,35 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
       ? '영어'
       : '정보/AI';
 
-  const handleSelectSubjectTopic = (topic: SubjectInquiryTopic) => {
+  const handleSelectSubjectTopic = (topic: SubjectInquiryTopic, slotIdx?: number) => {
+    selectedCategoryRef.current = topic.subjectCategory;
+    if (typeof slotIdx === 'number') {
+      selectedTopicIndexRef.current = slotIdx;
+    }
     setSelectedTopicId(topic.id);
     setSelectedCategory(topic.subjectCategory);
+    setUnitTab('tailored');
+
+    // Prefer exact matching AI tailored unit so Steps 2~5 reflect live Gemini plan
+    const exactUnit = tailoredUnits.find(
+      (u) => u.id === topic.id && u.subjectCategory === topic.subjectCategory
+    );
+    if (exactUnit) {
+      setSelectedUnitId(exactUnit.id);
+      applyTailoredPlan(currentStudent, exactUnit);
+      return;
+    }
+
     setFinalInquiryQuestion(topic.inquiryQuestion);
     setObservedPhenomenon(topic.connectionRationale || topic.topic);
     setSelectedLens(`${topic.subject} 핵심 개념 (${topic.curriculumConcept || '교과 원리'}) 분석 렌즈`);
+    setMatchedCliche(null);
+    setSelectedTwist({
+      approach: '선행 이론의 단편적 수용을 넘어 교과 핵심 원리 기반 실증 및 비판적 분석 확립',
+      subTopic: topic.topic,
+      academicLens: topic.curriculumConcept || topic.subject,
+      inquiryQuestion: topic.inquiryQuestion,
+    });
     setCustomMotivation(
       `평소 ${currentStudent.targetCareer || '진로'} 및 '${currentStudent.mainInterestTopic || '관심 분야'}'에 대한 깊은 호기심을 가지고 탐구하던 중, ${topic.subject} 교과의 '${topic.curriculumConcept || topic.unitName || '핵심 단원'}' 개념을 접하고 이를 실제 문제 해결에 응용하고자 본 탐구를 시작함.`
     );
@@ -546,8 +803,6 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
         setSelectedMethodology('public_data');
       } else if (topic.methodology.includes('문헌') || topic.methodology.includes('논문')) {
         setSelectedMethodology('literature');
-      } else if (topic.methodology.includes('실험') || topic.methodology.includes('키트')) {
-        setSelectedMethodology('simulation');
       } else {
         setSelectedMethodology('simulation');
       }
@@ -557,7 +812,6 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
     }
     const matchingUnit =
       tailoredUnits.find((u) => u.subjectCategory === topic.subjectCategory) ||
-      allUnits.find((u) => u.subjectCategory === topic.subjectCategory) ||
       curriculumUnits.find((u) => u.subjectCategory === topic.subjectCategory);
     if (matchingUnit) {
       setSelectedUnitId(matchingUnit.id);
@@ -626,9 +880,13 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
   const [copiedProposal, setCopiedProposal] = useState<boolean>(false);
   const [addedNotice, setAddedNotice] = useState<boolean>(false);
 
-  // Computed selected unit
+  // Computed selected unit (always strictly scoped to selectedCategory first so another subject never leaks)
   const currentUnit =
-    allUnits.find((u) => u.id === selectedUnitId) || allUnits[0] || curriculumUnits[0];
+    allUnits.find((u) => u.id === selectedUnitId && u.subjectCategory === selectedCategory) ||
+    tailoredUnits.find((u) => u.subjectCategory === selectedCategory) ||
+    curriculumUnits.find((u) => u.subjectCategory === selectedCategory) ||
+    allUnits.find((u) => u.id === selectedUnitId) ||
+    curriculumUnits[0];
   const currentMethodologyInfo =
     methodologyOptions.find((m) => m.type === selectedMethodology) ||
     methodologyOptions[0];
@@ -662,40 +920,53 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
     setCustomBooks(plan.relatedBooks || '');
 
     if (plan.clicheTwist) {
+      setMatchedCliche(null);
       setSelectedTwist(plan.clicheTwist);
     } else {
-      const q = plan.finalQuestion || plan.inquiryQuestion || '';
-      const found = clicheDatabase.find(
-        (c) =>
-          q.includes(c.keyword) ||
-          (student.mainInterestTopic && student.mainInterestTopic.includes(c.keyword)) ||
-          c.keyword.includes('유전자') ||
-          c.keyword.includes('인공지능') ||
-          c.keyword.includes('탄소')
-      );
-      if (found) {
+      const unitContext = `${unit.subjectName} ${unit.unitName} ${unit.unitConcepts.join(' ')}`;
+      const found = clicheDatabase.find((c) => unitContext.includes(c.keyword));
+      if (found && found.twists.length > 0) {
         setMatchedCliche(found);
-        if (found.twists.length > 0) {
-          setSelectedTwist(found.twists[0]);
-        }
+        setSelectedTwist(found.twists[0]);
+      } else {
+        setMatchedCliche(null);
+        setSelectedTwist(null);
       }
     }
   };
 
-  // Fetch server tailored curriculum
+  // Fetch server tailored curriculum safely using latest category ref (no stale closure overwrites)
   const fetchTailoredCurriculum = async (student: Student) => {
+    const reqId = ++fetchReqIdRef.current;
+    setIsLoadingCurriculum(true);
     try {
       const res = await fetch('/api/ai/wizard-tailor-curriculum', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ student }),
       });
-      if (res.ok) {
+      if (res.ok && reqId === fetchReqIdRef.current) {
         const data = await res.json();
-        if (data.tailoredUnits && data.tailoredUnits.length > 0) {
+        if (data.tailoredUnits && data.tailoredUnits.length > 0 && reqId === fetchReqIdRef.current) {
           setTailoredUnits(data.tailoredUnits);
-          const match = data.tailoredUnits.find((u: CurriculumUnit) => u.subjectCategory === selectedCategory) || data.tailoredUnits[0];
+          setCurriculumAiSource(data.source === 'gemini' ? 'gemini' : 'database');
+
+          const activeCat = selectedCategoryRef.current;
+          const catUnits = data.tailoredUnits.filter(
+            (u: CurriculumUnit) =>
+              u.subjectCategory === activeCat && isSubjectMatchingCategory(u.subjectName, activeCat)
+          );
+          const chosenSlotIdx = selectedTopicIndexRef.current;
+          const match =
+            (chosenSlotIdx !== null ? catUnits[chosenSlotIdx] : catUnits[0]) ||
+            catUnits[0] ||
+            data.tailoredUnits.find((u: CurriculumUnit) => u.subjectCategory === activeCat);
+
           if (match) {
+            // Only keep "이 주제 적용 중" active if the user explicitly clicked a topic card
+            if (chosenSlotIdx !== null) {
+              setSelectedTopicId(match.id);
+            }
             setSelectedUnitId(match.id);
             applyTailoredPlan(student, match);
           }
@@ -704,6 +975,10 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
       }
     } catch (e) {
       console.warn('API error in wizard-tailor-curriculum, relying on client generator:', e);
+    } finally {
+      if (reqId === fetchReqIdRef.current) {
+        setIsLoadingCurriculum(false);
+      }
     }
     return null;
   };
@@ -713,9 +988,18 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
     if (currentStudent) {
       const clientUnits = generateInitialTailoredUnits(currentStudent);
       setTailoredUnits(clientUnits);
-      const match = clientUnits.find((u) => u.subjectCategory === selectedCategory) || clientUnits[0];
-      setSelectedUnitId(match.id);
-      applyTailoredPlan(currentStudent, match);
+      setCurriculumAiSource(null);
+      selectedTopicIndexRef.current = null;
+      setSelectedTopicId('');
+
+      const activeCat = selectedCategoryRef.current;
+      const match =
+        clientUnits.find((u) => u.subjectCategory === activeCat) ||
+        clientUnits[0];
+      if (match) {
+        setSelectedUnitId(match.id);
+        applyTailoredPlan(currentStudent, match);
+      }
 
       // Async fetch enhanced Gemini tailored curriculum
       fetchTailoredCurriculum(currentStudent);
@@ -767,6 +1051,7 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
           const currData = await resCurr.json();
           if (currData.tailoredUnits && currData.tailoredUnits.length > 0) {
             updatedUnits = currData.tailoredUnits;
+            setCurriculumAiSource(currData.source === 'gemini' ? 'gemini' : 'database');
           }
         }
       } catch (e) {
@@ -787,9 +1072,18 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
       setTailoredUnits(updatedUnits);
       setUnitTab('tailored');
 
+      const activeCat = selectedCategoryRef.current;
+      const catUnits = updatedUnits.filter((u) => u.subjectCategory === activeCat);
+      const chosenSlotIdx = selectedTopicIndexRef.current;
       const activeUnit =
-        updatedUnits.find((u) => u.subjectCategory === selectedCategory) ||
+        (chosenSlotIdx !== null ? catUnits[chosenSlotIdx] : catUnits[0]) ||
+        catUnits[0] ||
         updatedUnits[0];
+      if (chosenSlotIdx !== null) {
+        setSelectedTopicId(activeUnit.id);
+      } else {
+        setSelectedTopicId('');
+      }
       setSelectedUnitId(activeUnit.id);
 
       // Deep tailor for active unit
@@ -810,6 +1104,14 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
           const data = await res.json();
           if (data && data.success && data.plan) {
             const p = data.plan;
+            // Persist deep Gemini plan back into activeUnit inside tailoredUnits
+            setTailoredUnits((prev) =>
+              prev.map((u) =>
+                u.id === activeUnit.id
+                  ? { ...u, tailoredPlan: { ...(u.tailoredPlan || {}), ...p } }
+                  : u
+              )
+            );
             if (p.phenomenaChips?.length) setPhenomenaChips(p.phenomenaChips);
             if (p.customObserved) setObservedPhenomenon(p.customObserved);
             if (p.observedPhenomenon) setObservedPhenomenon(p.observedPhenomenon);
@@ -1005,9 +1307,9 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
     {
       grade: '1학년 (기초 소양)',
       stageName: '기초 개념 정립 및 문제의식 발굴',
-      subject: '통합과학 / 통합사회 / 공통수학',
+      subject: getGrade1CommonSubjectByCategory(currentUnit.subjectCategory),
       focus: '일상 현상에서 교과 기본 법칙과 호기심 발견',
-      topicIdea: `${currentUnit.unitConcepts[0] || '기본 교과 개념'}의 실생활 적용 사례 조사 및 기초 원리 보고서 작성`,
+      topicIdea: `[${getGrade1CommonSubjectByCategory(currentUnit.subjectCategory)}] ${currentUnit.unitConcepts[0] || '기본 교과 개념'}의 실생활 적용 사례 조사 및 기초 원리 보고서 작성`,
       connectionReason: '고교 1학년 기본 성취기준을 충실히 이수했음을 입증하는 기초 토대',
     },
     {
@@ -1021,9 +1323,9 @@ export const CurriculumInquiryWizard: React.FC<CurriculumInquiryWizardProps> = (
     {
       grade: '3학년 (융합 발전)',
       stageName: '차년도 후속 심화 및 융합 과제',
-      subject: '전문교과 / 진로선택과목 / 생활과 윤리',
-      focus: '한계점 극복, 정책 제언, 다학제간 융합 모델링',
-      topicIdea: `${proposalTopicTitle.split(']')[1] || proposalTopicTitle}의 현실 적용 한계 보완 및 윤리적·제도적 가이드라인 연구`,
+      subject: getGrade3ElectiveSubjectByCategory(currentUnit.subjectCategory),
+      focus: '한계점 극복, 정책 제언, 심화 모델링 확장',
+      topicIdea: `${proposalTopicTitle.split(']')[1] || proposalTopicTitle}의 현실 적용 한계 보완 및 심화 확장 연구`,
       connectionReason: '단발성 탐구로 끝나지 않고 3개년 동안 학문적 성장이 꼬리를 물고 이어지는 연속성 증명',
     },
   ];
@@ -1128,6 +1430,17 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
               <Lightbulb className="w-4 h-4 text-amber-300 animate-pulse" />
               <span>💡 3단계로 끝내는 가장 쉬운 탐구 주제 잡기 공식</span>
             </button>
+
+            {onSwitchToRefinement && (
+              <button
+                type="button"
+                onClick={onSwitchToRefinement}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 hover:text-white rounded-2xl text-xs font-bold border border-emerald-400/40 transition-all backdrop-blur-sm shadow-sm cursor-pointer"
+              >
+                <Target className="w-4 h-4 text-emerald-300" />
+                <span>🎯 질문 좁히기 3단계 위저드</span>
+              </button>
+            )}
 
             {onSwitchToMindmap && (
               <button
@@ -1482,20 +1795,14 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
                     key={cat.id}
                     type="button"
                     onClick={() => {
+                      selectedCategoryRef.current = cat.id;
+                      selectedTopicIndexRef.current = null;
                       setSelectedCategory(cat.id);
-                      // Switch to the first topic of this subject
-                      const matchingTopics = synthesizedData.subjects.filter((s) => s.subjectCategory === cat.id);
-                      if (matchingTopics.length > 0) {
-                        setSelectedTopicId(matchingTopics[0].id);
-                        handleSelectSubjectTopic(matchingTopics[0]);
-                      }
-                      const listToSearch =
-                        unitTab === 'tailored'
-                          ? tailoredUnits
-                          : unitTab === 'preset'
-                          ? curriculumUnits
-                          : customUnits;
-                      const match = listToSearch.find((u) => u.subjectCategory === cat.id);
+                      setSelectedTopicId('');
+                      setUnitTab('tailored');
+                      const match =
+                        tailoredUnits.find((u) => u.subjectCategory === cat.id) ||
+                        curriculumUnits.find((u) => u.subjectCategory === cat.id);
                       if (match) {
                         setSelectedUnitId(match.id);
                         applyTailoredPlan(currentStudent, match);
@@ -1509,7 +1816,7 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
                   >
                     <span>{cat.label}</span>
                     <span className={`text-[9px] font-normal ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>
-                      실시간 최적화
+                      기본 2 · 심화 1
                     </span>
                   </button>
                 );
@@ -1525,7 +1832,9 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
                   type="button"
                   onClick={() => {
                     setUnitTab('tailored');
-                    const match = tailoredUnits.find((u) => u.subjectCategory === selectedCategory) || tailoredUnits[0];
+                    const match =
+                      tailoredUnits.find((u) => u.subjectCategory === selectedCategory) ||
+                      curriculumUnits.find((u) => u.subjectCategory === selectedCategory);
                     if (match) {
                       setSelectedUnitId(match.id);
                       applyTailoredPlan(currentStudent, match);
@@ -1545,7 +1854,9 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
                   type="button"
                   onClick={() => {
                     setUnitTab('preset');
-                    const match = curriculumUnits.find((u) => u.subjectCategory === selectedCategory) || curriculumUnits[0];
+                    const match =
+                      curriculumUnits.find((u) => u.subjectCategory === selectedCategory) ||
+                      tailoredUnits.find((u) => u.subjectCategory === selectedCategory);
                     if (match) {
                       setSelectedUnitId(match.id);
                       applyTailoredPlan(currentStudent, match);
@@ -1565,7 +1876,10 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
                   type="button"
                   onClick={() => {
                     setUnitTab('custom');
-                    const match = customUnits.find((u) => u.subjectCategory === selectedCategory) || customUnits[0];
+                    const match =
+                      customUnits.find((u) => u.subjectCategory === selectedCategory) ||
+                      tailoredUnits.find((u) => u.subjectCategory === selectedCategory) ||
+                      curriculumUnits.find((u) => u.subjectCategory === selectedCategory);
                     if (match) {
                       setSelectedUnitId(match.id);
                       applyTailoredPlan(currentStudent, match);
@@ -1618,11 +1932,22 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
                     ✦
                   </div>
                   <div>
-                    <h3 className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                    <h3 className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5 flex-wrap">
                       <span>[{selectedCategoryLabel}] 교과 맞춤 추천 탐구주제</span>
                       <span className="text-[10px] text-indigo-700 font-bold bg-indigo-100/80 px-2 py-0.5 rounded-md">
-                        3개 주제 (기본 2개 · 심화 1개)
+                        {currentSubjectTopics.length}개 주제 (기본 · 심화)
                       </span>
+                      {isLoadingCurriculum ? (
+                        <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Gemini AI 맞춤 주제 생성 중...</span>
+                        </span>
+                      ) : curriculumAiSource === 'gemini' ? (
+                        <span className="text-[10px] text-purple-700 font-extrabold bg-purple-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-purple-600" />
+                          <span>Gemini AI 실시간 생성</span>
+                        </span>
+                      ) : null}
                     </h3>
                     <p className="text-[11px] text-slate-500">
                       원하는 탐구 주제를 클릭하면 질문, 분석 렌즈, 4단계 실천 절차 및 500자 세특 초안이 즉시 자동 반영됩니다.
@@ -1638,15 +1963,15 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
                 </div>
               </div>
 
-              {/* 3 Topic Cards Grid */}
+              {/* 3 Topic Cards Grid (Strictly 2 Basic + 1 Advanced for selectedCategory) */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {currentSubjectTopics.map((topic) => {
-                  const isTopicSelected = selectedTopicId === topic.id || finalInquiryQuestion === topic.inquiryQuestion;
+                {currentSubjectTopics.map((topic, idx) => {
+                  const isTopicSelected = Boolean(selectedTopicId) && selectedTopicId === topic.id;
                   const isBasic = topic.level === 'basic';
                   return (
                     <div
-                      key={topic.id}
-                      onClick={() => handleSelectSubjectTopic(topic)}
+                      key={`${selectedCategory}-${topic.id}-${idx}`}
+                      onClick={() => handleSelectSubjectTopic(topic, idx)}
                       className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left relative group ${
                         isTopicSelected
                           ? 'bg-white border-indigo-600 ring-2 ring-indigo-300 shadow-md'
@@ -1669,12 +1994,17 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
                             </span>
                           </span>
 
-                          {isTopicSelected && (
-                            <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-indigo-600" />
-                              <span>선택됨</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                              {topic.subject}
                             </span>
-                          )}
+                            {isTopicSelected && (
+                              <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                                <CheckCircle2 className="w-3 h-3 text-indigo-600" />
+                                <span>선택됨</span>
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Title */}
@@ -1707,7 +2037,7 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleSelectSubjectTopic(topic);
+                          handleSelectSubjectTopic(topic, idx);
                         }}
                         className={`mt-2 w-full py-1.5 px-2.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 ${
                           isTopicSelected
@@ -1724,35 +2054,79 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
               </div>
             </div>
 
-            {/* Selected Topic Action Confirmation Bar in Tailored Mode (Eliminates the redundant 5 unit cards below topics) */}
-            {unitTab === 'tailored' && (
-              <div className="mt-3 p-3.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/60 to-white border border-indigo-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                    <CheckCircle2 className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-extrabold text-indigo-700 flex items-center gap-1.5">
-                      <span>[{selectedCategoryLabel} 교과] 선택된 탐구 주제 기획서 즉시 연동 완료</span>
-                      <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.2 rounded-md font-bold">
-                        교과별 3개 추천 주제 (기본 2개 · 심화 1개)
-                      </span>
+            {/* Selected Topic Action Confirmation Bar in Tailored Mode */}
+            {unitTab === 'tailored' && (() => {
+              const activeSelectedTopic =
+                currentSubjectTopics.find((t) => Boolean(selectedTopicId) && t.id === selectedTopicId) || null;
+              const previewTopic = activeSelectedTopic || currentSubjectTopics[0];
+              return (
+                <div className="mt-3 space-y-2.5">
+                  <div className="p-3.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/60 to-white border border-indigo-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
+                          activeSelectedTopic
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-indigo-100 text-indigo-700'
+                        }`}
+                      >
+                        {activeSelectedTopic ? (
+                          <CheckCircle2 className="w-4 h-4" />
+                        ) : (
+                          <Sparkles className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-extrabold text-indigo-700 flex items-center gap-1.5 flex-wrap">
+                          <span>
+                            {activeSelectedTopic
+                              ? `[${selectedCategoryLabel} · ${activeSelectedTopic.subject}] 선택된 탐구 주제 기획서 적용 완료`
+                              : `[${selectedCategoryLabel} 교과] 기본 탐구 2개 · 심화 탐구 1개 맞춤 추천 활성화`}
+                          </span>
+                          <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.2 rounded-md font-bold">
+                            {activeSelectedTopic
+                              ? activeSelectedTopic.level === 'basic'
+                                ? '기본 탐구 선택됨'
+                                : '심화 탐구 선택됨'
+                              : '원하는 주제를 클릭해 적용하세요'}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-900 line-clamp-1">
+                          {activeSelectedTopic
+                            ? activeSelectedTopic.inquiryQuestion
+                            : `위 [${selectedCategoryLabel}] 추천 주제 3개 중 하나를 선택하면 질문 퍼널과 1페이지 기획서에 즉시 반영됩니다.`}
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-xs font-bold text-slate-900 line-clamp-1">
-                      {finalInquiryQuestion || currentSubjectTopics[0]?.inquiryQuestion || '교과 연계 탐구 주제'}
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!activeSelectedTopic && currentSubjectTopics[0]) {
+                          handleSelectSubjectTopic(currentSubjectTopics[0], 0);
+                        }
+                        setCurrentStep(2);
+                      }}
+                      className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                    >
+                      <span>2단계 질문 퍼널로 이동</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   </div>
+
+                  {/* Academic & Public Data 1-Click Search Guide strictly scoped to active subject */}
+                  <AcademicSearchGuide
+                    inquiryQuestion={previewTopic?.inquiryQuestion || '교과 연계 탐구'}
+                    topicTitle={
+                      previewTopic
+                        ? `[${previewTopic.subject}] ${previewTopic.topic}`
+                        : proposalTopicTitle
+                    }
+                    subject={previewTopic?.subject || currentUnit?.subjectName}
+                    variant="compact"
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep(2)}
-                  className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 shrink-0"
-                >
-                  <span>2단계 질문 퍼널로 이동</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Standard Preset / Custom Units View (Only shown when user explicitly toggles away from tailored recommendations) */}
             {unitTab !== 'tailored' && (
@@ -2773,13 +3147,21 @@ ${currentMethodologyInfo.actionSteps.map((s) => `  * ${s}`).join('\n')}
                   </div>
                 </div>
 
-                <div className="p-4 bg-amber-50/70 rounded-xl border border-amber-200/60">
+                <div className="p-4 bg-amber-50/70 rounded-xl border border-amber-200/60 space-y-3">
                   <span className="text-[11px] font-extrabold text-amber-900 block mb-1">
                     💡 핵심 탐구 질문 (Core Question)
                   </span>
-                  <div className="text-xs font-bold text-amber-950">
-                    {proposalQuestion}
+                  <div className="text-xs sm:text-sm font-bold text-amber-950">
+                    "{proposalQuestion}"
                   </div>
+
+                  {/* Academic & Public Data 1-Click Search Guide */}
+                  <AcademicSearchGuide
+                    inquiryQuestion={proposalQuestion}
+                    topicTitle={proposalTopicTitle}
+                    subject={currentUnit.subjectName}
+                    variant="full"
+                  />
                 </div>
               </div>
 

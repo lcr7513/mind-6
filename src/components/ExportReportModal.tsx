@@ -30,33 +30,41 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
   const studentRecords = records.filter((r) => r.studentId === student.id);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden my-6 border border-slate-200">
-        {/* Modal Controls Bar */}
-        <div className="p-4 bg-slate-900 text-white flex items-center justify-between no-print">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in print:static print:block print:p-0 print:bg-white"
+    >
+      <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200 print:max-h-none print:shadow-none print:border-0 print:rounded-none print:overflow-visible">
+        {/* Modal Controls Bar (Pinned at Top) */}
+        <div className="shrink-0 p-4 bg-slate-900 text-white flex items-center justify-between no-print print:hidden">
           <div className="flex items-center gap-2 text-xs">
             <FileText className="w-4 h-4 text-indigo-400" />
             <span className="font-bold">학생부 종합전형 탐구 포트폴리오 및 세특 요약서</span>
           </div>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={handlePrint}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
               인쇄 및 PDF 저장
             </button>
             <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 cursor-pointer"
+              aria-label="닫기"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Printable Document Body */}
-        <div className="p-8 sm:p-12 space-y-8 bg-white print:p-0">
+        {/* Printable Document Body (Full Top-to-Bottom Scrollable) */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 sm:p-12 space-y-8 bg-white print:overflow-visible print:p-0">
           {/* Document Title Header */}
           <div className="text-center pb-6 border-b-2 border-slate-900 space-y-2">
             <span className="text-xs font-bold tracking-widest text-indigo-600 uppercase">
@@ -66,7 +74,7 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
               학생부 종합전형 진로·교과 연계 탐구 포트폴리오
             </h1>
             <p className="text-xs text-slate-500">
-              한국과학예술고등학교 진로진학상담부 인증 서식 · 발행일자:{' '}
+              {teacher.school || '인성여자고등학교'} 진로진학 및 탐구지도부 · 발행일자:{' '}
               {new Date().toLocaleDateString('ko-KR')}
             </p>
           </div>
@@ -225,7 +233,7 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
           <div className="pt-8 text-center text-xs text-slate-500 space-y-1 border-t border-slate-200">
             <p>위 내용은 학교생활기록부 기재요령 및 대입 공정성 가이드라인을 준수하여 작성되었습니다.</p>
             <p className="font-bold text-slate-800">
-              한국과학예술고등학교 진로진학상담부장 강수진 (인)
+              {teacher.school || '인성여자고등학교'} {teacher.role || '진로진학 및 탐구지도 교사'} {teacher.name} (인)
             </p>
           </div>
         </div>

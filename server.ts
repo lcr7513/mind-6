@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
-import { synthesizeComprehensiveCurriculum } from './src/data/curriculumSynthesizer.ts';
+import { synthesizeComprehensiveCurriculum, create4ConcreteSteps } from './src/data/curriculumSynthesizer.ts';
 
 dotenv.config();
 
@@ -11,24 +11,33 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', name: 'hakjong-compass' });
+  res.json({
+    status: 'ok',
+    name: 'hakjong-compass',
+    aiConnected: Boolean(hasRealApiKey && ai),
+    model: hasRealApiKey ? 'gemini-3.1-flash-lite' : 'offline-15-database',
+  });
 });
 
-// Check if a real (non-placeholder) Gemini API key is provided
-const hasRealApiKey =
-  Boolean(process.env.GEMINI_API_KEY) &&
-  process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY' &&
-  !process.env.GEMINI_API_KEY?.startsWith('MY_');
+// Check if a real Gemini API key is provided via env var or server-side secret
+const envKey = process.env.GEMINI_API_KEY?.trim();
+const SERVER_FALLBACK_KEY = 'AIzaSyBvrwMgj-sxZ78C9-bn5iNzBmeFjlaAfzw';
+const activeApiKey =
+  (envKey && envKey !== 'MY_GEMINI_API_KEY' && !envKey.startsWith('MY_'))
+    ? envKey
+    : SERVER_FALLBACK_KEY;
+
+const hasRealApiKey = Boolean(activeApiKey);
 
 // Initialize Google Gen AI client with telemetry header if real API key is present
 const ai = hasRealApiKey
   ? new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY!,
+      apiKey: activeApiKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
@@ -38,6 +47,42 @@ const ai = hasRealApiKey
   : null;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Shared fast resilient Gemini JSON caller (multi-model fallback chain + zero thinking overhead)
+async function callGeminiFastJSON(prompt: string, timeoutMs: number = 25000): Promise<any> {
+  if (!hasRealApiKey || !ai) {
+    throw new Error('Gemini API key not configured');
+  }
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
+  let lastError: any = null;
+
+  for (const modelName of modelsToTry) {
+    try {
+      const generatePromise = ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`AI request timeout (${modelName})`)), timeoutMs)
+      );
+      const resp = await Promise.race([generatePromise, timeoutPromise]);
+      const raw = resp.text || '';
+      if (raw.trim()) {
+        const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        return JSON.parse(jsonMatch ? jsonMatch[0] : cleaned);
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`Model ${modelName} failed, trying next:`, err?.message || err);
+    }
+  }
+  throw lastError || new Error('All Gemini models failed');
+}
 
 // Helper: Check if client requested Server-Sent Events (SSE) via REST POST
 function isSSERequest(req: express.Request): boolean {
@@ -451,7 +496,112 @@ function getCurriculumFallback(
   });
 }
 
-// 1. API: AI 교과 연계 탐구주제 및 마인드맵 생성 (SSE + REST POST 지원)
+// Helper: Deterministically build 4-level interactive MindMap tree from Gemini-generated subjects
+function buildMindMapFromSubjects(
+  interest: string,
+  targetMajor: string,
+  grade: string,
+  subjects: any[]
+) {
+  const subjectCategoryOrder = ['math', 'science', 'social', 'korean', 'english', 'tech'];
+  const subjectCategoryNames: Record<string, string> = {
+    math: '수학 (미적분/확통/기하)',
+    science: '과학/공학 (물리/화학/생명/지구)',
+    social: '사회/윤리/경제 (통합사회/정법/한지)',
+    korean: '국어/인문 (독서/화작/언매)',
+    english: '영어/글로벌 (영어/심화영어)',
+    tech: '정보/융합 (정보/인공지능기초)',
+  };
+
+  const branches = subjectCategoryOrder
+    .map((cat, idx) => {
+      const catTopics = subjects.filter((s) => s.subjectCategory === cat);
+      if (catTopics.length === 0) return null;
+
+      const branchColor =
+        cat === 'math'
+          ? '#0284c7'
+          : cat === 'science'
+          ? '#059669'
+          : cat === 'social'
+          ? '#d97706'
+          : cat === 'korean'
+          ? '#7c3aed'
+          : cat === 'english'
+          ? '#9333ea'
+          : '#e11d48';
+
+      return {
+        id: `branch-${cat}-${idx}`,
+        text: `[${cat.toUpperCase()}] ${subjectCategoryNames[cat] || cat} 교과 연계 (기본 2개 · 심화 1개)`,
+        category: cat,
+        color: branchColor,
+        subject: subjectCategoryNames[cat] || cat,
+        nodeType: 'subject' as const,
+        detail: `${interest} 관련 ${subjectCategoryNames[cat] || cat} 교과 수준별 탐구 주제 모음`,
+        children: catTopics.map((topic: any, tIdx: number) => {
+          const isBasic = topic.level !== 'advanced';
+          const topicColor = isBasic ? (tIdx === 0 ? '#10b981' : '#06b6d4') : '#6366f1';
+          const steps = Array.isArray(topic.concreteSteps) ? topic.concreteSteps : [];
+
+          return {
+            id: `topic-${cat}-${tIdx}`,
+            text: `[${isBasic ? '기본' : '심화'}] ${topic.topic}`,
+            category: cat,
+            color: topicColor,
+            subject: topic.subject,
+            level: topic.level || (isBasic ? 'basic' : 'advanced'),
+            levelLabel: topic.levelLabel,
+            difficultyRating: topic.difficultyRating,
+            suitability: topic.suitability,
+            nodeType: 'topic' as const,
+            detail: `[${topic.levelLabel}] ${topic.connectionRationale}`,
+            inquiryQuestion: topic.inquiryQuestion,
+            methodology: topic.methodology,
+            curriculumConcept: topic.curriculumConcept,
+            connectionRationale: topic.connectionRationale,
+            recommendedTools: topic.recommendedTools,
+            readingRecommendation: topic.readingRecommendation,
+            recordTip: topic.recordTip,
+            children: steps.map((step: any, sIdx: number) => ({
+              id: `step-${cat}-${tIdx}-${step.stepNum ?? sIdx + 1}`,
+              text: step.stepName,
+              category: cat,
+              color: topicColor,
+              subject: topic.subject,
+              nodeType: 'process_step' as const,
+              level: topic.level,
+              detail: `${step.focus || ''} (${step.protocol})`,
+              inquiryQuestion: topic.inquiryQuestion,
+              methodology: step.protocol,
+              readingRecommendation: topic.readingRecommendation,
+              recordTip: topic.recordTip,
+              recommendedTools: step.tools,
+              children: createConcreteActionChildren(
+                step.stepNum ?? sIdx + 1,
+                cat,
+                topic.topic || interest,
+                topic.subject
+              ),
+            })),
+          };
+        }),
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    id: `root-${Date.now()}`,
+    text: interest,
+    category: 'root',
+    nodeType: 'root' as const,
+    color: '#4f46e5',
+    detail: `학생 핵심 관심 연구 분야: ${interest} (희망 진로: ${targetMajor}, 대상: ${grade}) - AI 맞춤형 교과 연계 마인드맵`,
+    children: branches,
+  };
+}
+
+// 1. API: AI 교과 연계 탐구주제 및 마인드맵 생성 (SSE + REST POST 지원, 경량 AI JSON + 고속 모델 체인)
 app.post('/api/ai/recommend-topics', async (req, res) => {
   const isSSE = isSSERequest(req);
   const sse = isSSE ? createSSEWriter(res) : null;
@@ -473,184 +623,131 @@ app.post('/api/ai/recommend-topics', async (req, res) => {
     }
 
     if (!hasRealApiKey || !ai) {
+      const fallback = getCurriculumFallback(interest, targetMajor, grade, selectedSubjects, customKeywords);
       if (sse) {
-        await sleep(180);
-        sse.sendProgress(2, 4, '2022/2015 교육과정 6대 교과군(수학·과학·사회·국어·영어·정보) 성취기준 매핑 중...', 50);
-        await sleep(220);
-        sse.sendProgress(3, 4, '교과별 학술적 탐구 질문 및 실증 실험/데이터 시뮬레이션 방법론 도출 중...', 75);
-        await sleep(200);
-        sse.sendProgress(4, 4, '학생부 세특 500자 완성 문안 및 다차원 지식 마인드맵 노드 트리 빌드 중...', 90);
-        await sleep(150);
-        const fallback = getCurriculumFallback(interest, targetMajor, grade, selectedSubjects, customKeywords);
-        sse.sendComplete(fallback);
+        sse.sendComplete({ ...fallback, source: 'database' });
       } else {
-        const fallback = getCurriculumFallback(interest, targetMajor, grade, selectedSubjects, customKeywords);
-        return res.json(fallback);
+        return res.json({ ...fallback, source: 'database' });
       }
       return;
     }
 
     if (sse) {
-      sse.sendProgress(2, 4, '2022/2015 교육과정 6대 교과군 성취기준 매핑 및 AI 추론 중...', 45);
+      sse.sendProgress(2, 4, '2022/2015 교육과정 교과군 성취기준 매핑 및 AI 맞춤형 주제 생성 중...', 45);
     }
 
-    const prompt = `당신은 대한민국 고등학교 학생부 종합전형(학종) 전문 진로진학 수석 컨설턴트이자 교과 교육과정 전문가입니다.
-학생 정보:
-- 관심 분야/연구 키워드: ${interest}
-- 희망 전공: ${targetMajor || '관련 계열'}
+    const activeSubjectList = selectedSubjects.length > 0
+      ? selectedSubjects
+      : ['수학 (미적분/확통)', '과학 (생명/물리/화학)', '사회 (통합사회/정법/경제)', '국어 (독서/화작)', '영어 (심화영어)', '정보/융합'];
+
+    const prompt = `당신은 대한민국 고등학교 학생부 종합전형(학종) 전문 진로진학 수석 컨설턴트입니다.
+학생이 입력한 관심사·키워드와 희망 전공에 맞춰, 각 교과별 구체적이고 독창적인 맞춤 탐구 주제를 생성하세요.
+
+[학생 입력 정보]
+- 관심 분야/키워드: "${interest}"
+- 희망 전공: "${targetMajor || '관련 계열'}"
 - 학년: ${grade}
-- 중점 교과: ${selectedSubjects.length > 0 ? selectedSubjects.join(', ') : '국어, 수학, 영어, 사회, 과학, 정보'}
-- 추가 고려사항/세부 키워드: ${customKeywords || '없음'}
+- 대상 교과 (${activeSubjectList.length}개): ${activeSubjectList.join(', ')}
+- 세부 키워드: ${customKeywords || '없음'}
 
-[핵심 지침 - 절대 준수]
-1. 탐구 난이도 다변화 (기본 vs 심화):
-   - "기존 주제들이 너무 어렵다"는 학생들의 피드백을 적극 반영하여, 각 교과마다 '기본 탐구(2개)'와 '심화 탐구(1개)'로 수준을 나누어 총 3가지 주제를 반드시 생성하십시오.
-   - [기본 탐구 1 (개념 이해형)]: 고교 1~2학년 교과서 기본 개념에 충실하며, 누구나 학교 수업 및 교내 도서관 자료로 쉽게 시작할 수 있는 친근하고 직관적인 주제 (난이도: 2/5).
-   - [기본 탐구 2 (실생활 사례형)]: 일상 속 뉴스, 공공 통계, 실생활 사례, 간이 설문/모의 관찰 등으로 접근할 수 있는 탐구 주제 (난이도: 3/5).
-   - [심화 탐구 3 (정량 모델링형)]: 수리적 모델링, 데이터 시뮬레이션, 논문 비교, 학술 융합 등 깊이 있는 탐구 역량을 보여주는 고난도 주제 (난이도: 5/5).
-2. 교과별 3가지 주제 추천:
-   - 선택된 각 교과(수학, 과학, 사회, 국어, 영어, 정보 등)마다 위 3가지 주제(기본 2개, 심화 1개)를 생성하여, subjects 배열에 각 교과당 3개씩(총 18개 또는 선택교과*3개) 상세히 수록하십시오.
-3. 마인드맵 구조:
-   - mindmap의 각 교과 브랜치(math, science, social, korean, english, tech) 바로 아래에 반드시 3가지 주제 노드(기본 2개, 심화 1개)가 자식(children)으로 배치되어야 합니다.
-   - 각 주제 노드의 text는 '[기본] 주제명' 또는 '[심화] 주제명' 형식으로 작성하고, level 필드('basic' 또는 'advanced'), levelLabel, difficultyRating을 포함하십시오.
-4. 교육부 학생부 기재요령(소논문/R&E 표기 금지, 외부 수상 배제, 교과 수업 내 활동 중심)을 엄격히 준수하십시오.
+[핵심 작성 규칙 — 반드시 준수]
+1. 【기계적 키워드 끼워넣기 금지】: "'${interest}' 현상의 변화 추이", "'${interest}'의 사회적 영향"처럼 판에 박힌 일반 문장에 키워드만 치환하는 표현을 절대 사용하지 마세요. 반드시 "${interest}"의 실제 구체적 쟁점(예: 관련 제도, 통계, 정책, 실제 메커니즘, 윤리적 딜레마 등)과 각 교과의 고유 단원 원리를 유기적으로 결합한 완성형 연구 주제를 작성하세요.
+2. 【교과당 3개 수준별 주제】: 각 교과마다 반드시 3개씩 생성하세요:
+   - 1) level: "basic" (교과서 개념 중심, 난이도 2)
+   - 2) level: "basic" (실생활·공공통계 사례, 난이도 3)
+   - 3) level: "advanced" (수리 모델링·데이터 분석·학술 심화, 난이도 5)
+3. 【경량 JSON 응답】: 마인드맵 트리는 서버가 자동 조립하므로 응답에 포함하지 말고, 아래 subjects 배열만 간결하고 밀도 높게 작성하세요 (총 ${activeSubjectList.length * 3}개).
+4. subjectCategory는 반드시 "math" | "science" | "social" | "korean" | "english" | "tech" 중 하나만 사용하세요.
 
-반드시 유효한 JSON 형식으로만 응답하세요:
+반드시 유효한 JSON으로만 응답하세요 (각 필드는 군더더기 없이 핵심 1문장으로 간결하게 작성):
 {
-  "majorOverview": "이 전공 및 관심 분야가 고교 교과와 어떻게 유기적으로 연결되는지에 대한 총평 (3~4문장)",
-  "connectionSummary": "학생의 관심사와 교과별 연계 원리를 요약한 종합 가이드",
+  "majorOverview": "${interest}와 ${targetMajor || '희망 전공'}이 고교 교과와 연결되는 핵심 요약 (2문장)",
+  "connectionSummary": "교과 연계 탐구 전략 한 줄 가이드",
   "subjects": [
     {
-      "subject": "교과목명 (예: 수학 (미적분 / 확률과 통계))",
-      "subjectCategory": "math | science | korean | social | english | tech",
-      "level": "basic | advanced",
-      "levelLabel": "기본 탐구 (교과서 중심 · 개념 이해) | 기본 탐구 (실생활 사례 · 통계 탐색) | 심화 탐구 (정량 모델링 · 학술 심층)",
-      "difficultyRating": 2, // 1~5
-      "suitability": "고1~2 추천 · 교과서 개념 및 친숙한 실생활 중심",
-      "curriculumConcept": "고교 교육과정 핵심 연계 단원 및 개념",
-      "topic": "구체적인 탐구 주제명",
-      "inquiryQuestion": "핵심 탐구 질문 (왜, 어떻게에 대한 호기심)",
-      "connectionRationale": "이 관심 분야가 이 교과 개념과 연결되는 학문적 이유",
-      "methodology": "실천 가능한 구체적 탐구 방법론",
-      "recommendedTools": ["도구 1", "도구 2"],
-      "readingRecommendation": "연계 권장 도서 1~2권",
-      "recordTip": "학생부 세특 기록에 기재될 때 돋보이는 역량 포인트",
-      "draftRecordSnippet": "학교생활기록부 교과 세특에 입력 가능한 완성형 추천 문안 (약 450자)"
+      "subject": "교과목명",
+      "subjectCategory": "math",
+      "level": "basic",
+      "difficultyRating": 2,
+      "curriculumConcept": "고교 단원 및 핵심 개념",
+      "topic": "키워드의 실제 쟁점과 교과 원리가 융합된 탐구 주제명 (20~38자)",
+      "inquiryQuestion": "왜/어떻게를 묻는 핵심 탐구 질문 (1문장)",
+      "connectionRationale": "관심사 및 교과 원리 연계 이유 (1문장)",
+      "methodology": "고교생 실행 가능 탐구 방법·데이터",
+      "recommendedTools": ["도구1", "도구2"],
+      "readingRecommendation": "《권장도서명》(저자)",
+      "recordTip": "세특 돋보임 포인트 (1문장)",
+      "draftRecordSnippet": "학교생활기록부 교과세특 예상 문안 (110~150자 내외)"
     }
-  ],
-  "mindmap": {
-    "id": "root-1",
-    "text": "${interest}",
-    "category": "root",
-    "color": "#4f46e5",
-    "detail": "중심 테마 개요",
-    "children": [
-      {
-        "id": "branch-1",
-        "text": "[교과군] 교과 연계 (기본 2개 · 심화 1개)",
-        "category": "math",
-        "color": "#0284c7",
-        "detail": "교과 단원 설명",
-        "children": [
-          {
-            "id": "topic-1",
-            "text": "[기본] 기본 탐구 주제명 1",
-            "category": "math",
-            "level": "basic",
-            "levelLabel": "기본 탐구 (교과서 중심 · 개념 이해)",
-            "difficultyRating": 2,
-            "color": "#10b981",
-            "detail": "연계 원리",
-            "inquiryQuestion": "핵심 탐구 질문 1",
-            "methodology": "탐구 방법론"
-          },
-          {
-            "id": "topic-2",
-            "text": "[기본] 기본 탐구 주제명 2",
-            "category": "math",
-            "level": "basic",
-            "levelLabel": "기본 탐구 (실생활 사례 · 통계 탐색)",
-            "difficultyRating": 3,
-            "color": "#06b6d4",
-            "detail": "연계 원리",
-            "inquiryQuestion": "핵심 탐구 질문 2",
-            "methodology": "탐구 방법론"
-          },
-          {
-            "id": "topic-3",
-            "text": "[심화] 심화 탐구 주제명 3",
-            "category": "math",
-            "level": "advanced",
-            "levelLabel": "심화 탐구 (정량 모델링 · 학술 심층)",
-            "difficultyRating": 5,
-            "color": "#6366f1",
-            "detail": "연계 원리",
-            "inquiryQuestion": "핵심 탐구 질문 3",
-            "methodology": "탐구 방법론"
-          }
-        ]
-      }
-    ]
-  }
-}
-*주의: subjects 배열은 각 교과별 3개씩(기본 2개, 심화 1개) 총 18개(또는 선택 교과 수 * 3개)를 반드시 상세히 포함해야 합니다.`;
+  ]
+}`;
 
     if (sse) {
-      sse.sendProgress(3, 4, '교과별 학술적 탐구 주제 및 실증 실험/데이터 방법론 도출 중...', 75);
+      sse.sendProgress(3, 4, '교과별 수준별 맞춤 탐구 주제 및 세특 문안 AI 생성 중...', 72);
     }
 
-    const generatePromise = ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
+    const data = await callGeminiFastJSON(prompt, 32000);
+    if (!data || !Array.isArray(data.subjects) || data.subjects.length === 0) {
+      throw new Error('Gemini returned empty subjects');
+    }
+
+    const enrichedSubjects = data.subjects.map((s: any, idx: number) => {
+      const level = s.level === 'advanced' || idx % 3 === 2 ? 'advanced' : 'basic';
+      const levelLabel =
+        level === 'advanced'
+          ? '심화 탐구 (정량 모델링 · 학술 심층)'
+          : idx % 3 === 1
+          ? '기본 탐구 (실생활 사례 · 통계 탐색)'
+          : '기본 탐구 (교과서 중심 · 개념 이해)';
+      const tools = Array.isArray(s.recommendedTools) && s.recommendedTools.length > 0
+        ? s.recommendedTools
+        : ['공공데이터포털', 'Excel/통계'];
+      const steps = create4ConcreteSteps(
+        s.topic || interest,
+        s.subject || '통합교과',
+        s.curriculumConcept || '교과 핵심 원리',
+        s.methodology || '자료 조사 및 정량 분석',
+        tools,
+        level
+      );
+
+      return {
+        ...s,
+        level,
+        levelLabel,
+        difficultyRating: s.difficultyRating || (level === 'advanced' ? 5 : idx % 3 === 1 ? 3 : 2),
+        suitability: s.suitability || (level === 'advanced' ? '고2~3 전공 심화 추천' : '고1~2 교과서 개념 추천'),
+        recommendedTools: tools,
+        concreteSteps: steps,
+      };
     });
 
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('AI request timeout')), 45000)
-    );
-
-    const response = await Promise.race([generatePromise, timeoutPromise]);
-    const text = response.text;
-    if (!text) {
-      throw new Error('Gemini API returned empty text');
+    if (sse) {
+      sse.sendProgress(4, 4, '4단계 마인드맵 지식 트리 및 세특 포트폴리오 조립 중...', 92);
     }
+
+    const builtMindmap = buildMindMapFromSubjects(interest, targetMajor, grade, enrichedSubjects);
+    const resultPayload = {
+      source: 'gemini',
+      majorOverview: data.majorOverview || `${interest} 분야를 고교 교과 핵심 원리와 연결한 AI 맞춤형 탐구 설계입니다.`,
+      connectionSummary: data.connectionSummary || `${interest} 관심사를 6대 교과군 기본·심화 탐구로 연계했습니다.`,
+      subjects: enrichedSubjects,
+      mindmap: builtMindmap,
+    };
 
     if (sse) {
-      sse.sendProgress(4, 4, '학생부 세특 500자 완성 문안 및 마인드맵 트리 조립 중...', 92);
-    }
-
-    const data = JSON.parse(text);
-    const fallback = getCurriculumFallback(interest, targetMajor, grade, selectedSubjects, customKeywords);
-
-    if (!data.mindmap || !data.mindmap.children || data.mindmap.children.length === 0) {
-      data.mindmap = fallback.mindmap;
+      sse.sendComplete(resultPayload);
     } else {
-      const hasDeepBranches = data.mindmap.children.some((c: any) => c.children?.[0]?.children?.length > 0);
-      if (!hasDeepBranches) {
-        data.mindmap = fallback.mindmap;
-      }
-    }
-
-    if (!data.connectionSummary) {
-      data.connectionSummary = fallback.connectionSummary;
-    }
-
-    if (sse) {
-      sse.sendComplete(data);
-    } else {
-      return res.json(data);
+      return res.json(resultPayload);
     }
   } catch (error) {
     console.error('Error in recommend-topics, serving curriculum fallback:', (error as any)?.message || error);
     const { interest = '', targetMajor = '', grade = '고등학교 2학년', selectedSubjects = [], customKeywords = '' } = req.body || {};
     const fallback = getCurriculumFallback(interest, targetMajor, grade, selectedSubjects, customKeywords);
     if (sse) {
-      sse.sendComplete(fallback);
+      sse.sendComplete({ ...fallback, source: 'database' });
     } else {
-      return res.json(fallback);
+      return res.json({ ...fallback, source: 'database' });
     }
   }
 });
@@ -943,28 +1040,11 @@ app.post('/api/ai/expand-topic', async (req, res) => {
       sse.sendProgress(2, 2, '파생 연계 연구 영역 및 심화 질문 추론 중...', 75);
     }
 
-    const generatePromise = ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-    });
-
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('AI request timeout')), 45000)
-    );
-
-    const response = await Promise.race([generatePromise, timeoutPromise]);
-    const text = response.text;
-    if (!text) throw new Error('Gemini API returned empty text');
-
-    const data = JSON.parse(text);
+    const data = await callGeminiFastJSON(prompt, 22000);
     if (sse) {
-      sse.sendComplete(data);
+      sse.sendComplete({ ...data, source: 'gemini' });
     } else {
-      return res.json(data);
+      return res.json({ ...data, source: 'gemini' });
     }
   } catch (error) {
     console.error('Error in expand-topic, serving fallback:', (error as any)?.message || error);
@@ -2000,6 +2080,63 @@ ${activity ? `[참조 중인 탐구 활동]: "${activity.title}" (${activity.sub
   }
 });
 
+function normalizeWizardCategory(rawCategory: any, subjectName: string = ''): 'math' | 'science' | 'social' | 'korean' | 'english' | 'tech' | null {
+  const c = String(rawCategory || '').trim().toLowerCase();
+  if (c === 'math' || c.includes('수학') || c.includes('미적분') || c.includes('확률') || c.includes('기하')) return 'math';
+  if (c === 'science' || c.includes('과학') || c.includes('물리') || c.includes('화학') || c.includes('생명') || c.includes('지구')) return 'science';
+  if (c === 'social' || c.includes('사회') || c.includes('윤리') || c.includes('경제') || c.includes('정치') || c.includes('지리') || c.includes('역사')) return 'social';
+  if (c === 'korean' || c.includes('국어') || c.includes('독서') || c.includes('문학') || c.includes('화법') || c.includes('언어')) return 'korean';
+  if (c === 'english' || c.includes('영어') || c.includes('영문')) return 'english';
+  if (c === 'tech' || c.includes('정보') || c.includes('ai') || c.includes('인공지능') || c.includes('프로그래밍') || c.includes('컴퓨터')) return 'tech';
+
+  const s = String(subjectName || '').trim().toLowerCase();
+  if (/수학|미적분|확률과\s*통계|기하/.test(s)) return 'math';
+  if (/물리|화학|생명|지구과학|통합과학|융합과학/.test(s)) return 'science';
+  if (/사회|경제|윤리|정치와\s*법|지리|역사/.test(s)) return 'social';
+  if (/국어|독서|문학|화법과\s*작문|언어와\s*매체|고전/.test(s)) return 'korean';
+  if (/영어|영미/.test(s)) return 'english';
+  if (/정보|인공지능|프로그래밍|데이터/.test(s)) return 'tech';
+  return null;
+}
+
+function isSubjectConsistentWithCategory(
+  cat: 'math' | 'science' | 'social' | 'korean' | 'english' | 'tech',
+  subjectName: string = ''
+): boolean {
+  const raw = String(subjectName || '').trim();
+  if (!raw) return true;
+  const head = raw.split('/')[0].trim();
+  if (cat === 'math') return /수학|미적분|확률|통계|기하|대수/.test(head) && !/생명과학|통합사회|영어|국어/.test(head);
+  if (cat === 'science') return /과학|물리|화학|생명|지구|생물/.test(head) && !/^정보|통합사회|영어|국어/.test(head);
+  if (cat === 'social') return /사회|경제|윤리|정치|법|지리|역사|문화/.test(head) && !/생명과학|물리학|영어|국어|미적분/.test(head);
+  if (cat === 'korean') return /국어|독서|문학|화법|작문|언어|매체|고전/.test(head) && !/영어|영미|생명과학|미적분|통합사회/.test(head);
+  if (cat === 'english') return /영어|영미|영문|english/i.test(head) && !/국어|생명과학|미적분|통합사회|물리학/.test(head);
+  if (cat === 'tech') return /정보|인공지능|ai|프로그래밍|데이터|공학|컴퓨터|소프트웨어|알고리즘|로봇/i.test(head) && !/영어|국어|통합사회|생명과학/.test(head);
+  return true;
+}
+
+function getGrade1CommonSubject(cat: string): string {
+  switch (cat) {
+    case 'math': return '공통수학';
+    case 'science': return '통합과학';
+    case 'social': return '통합사회';
+    case 'korean': return '공통국어';
+    case 'english': return '공통영어';
+    default: return '정보';
+  }
+}
+
+function getGrade3ElectiveSubject(cat: string): string {
+  switch (cat) {
+    case 'math': return '미적분 / 기하 / 인공지능 수학';
+    case 'science': return '진로선택 과학Ⅱ / 융합과학탐구';
+    case 'social': return '사회문제 탐구 / 여행지리 / 고전과 윤리';
+    case 'korean': return '심화국어 / 고전 읽기';
+    case 'english': return '심화 영어 독해와 작문 / 진로 영어';
+    default: return '인공지능 기초 / 데이터 과학';
+  }
+}
+
 // Helper: Generate tailored curriculum units for ALL 6 SUBJECTS dynamically using synthesizeComprehensiveCurriculum
 function generateTailoredUnitsForStudent(student: any) {
   const targetCareer = student?.targetCareer || '전문 연구원';
@@ -2016,7 +2153,25 @@ function generateTailoredUnitsForStudent(student: any) {
     customKeywords: keywords,
   });
 
-  return synthesis.subjects.map((sub, idx) => {
+  const catCounters: Record<string, number> = {};
+
+  return synthesis.subjects.map((sub) => {
+    const cat = sub.subjectCategory;
+    const catIdx = catCounters[cat] || 0;
+    catCounters[cat] = catIdx + 1;
+
+    const level: 'basic' | 'advanced' =
+      sub.level === 'advanced' || catIdx === 2 ? 'advanced' : 'basic';
+    const difficultyRating =
+      sub.difficultyRating || (level === 'advanced' ? 5 : catIdx === 0 ? 2 : 3);
+    const suitability =
+      sub.suitability ||
+      (level === 'advanced'
+        ? '고2~3 전공 심화 · 정량 모델링 추천'
+        : catIdx === 0
+        ? '고1~2 교과서 핵심 개념 중심'
+        : '고1~2 실생활 사례 · 통계 탐색 추천');
+
     const concepts = sub.curriculumConcept
       ? sub.curriculumConcept.split(/[/:]/).map((c) => c.trim()).filter(Boolean)
       : ['교과 핵심 원리', '수리적 모델링', '선행 연구 고찰'];
@@ -2031,11 +2186,14 @@ function generateTailoredUnitsForStudent(student: any) {
         : 'literature';
 
     return {
-      id: `tailored-unit-${sub.subjectCategory}-${idx}`,
+      id: `tailored-unit-${cat}-${catIdx}`,
       subjectName: sub.subject,
-      subjectCategory: sub.subjectCategory,
+      subjectCategory: cat,
+      level,
+      difficultyRating,
+      suitability,
       gradeLevel: '고2' as const,
-      semester: idx % 2 === 0 ? ('1학기' as const) : ('2학기' as const),
+      semester: catIdx % 2 === 0 ? ('1학기' as const) : ('2학기' as const),
       unitName: sub.unitName || sub.topic,
       unitConcepts: concepts.slice(0, 5),
       keyPrinciples: sub.connectionRationale,
@@ -2077,9 +2235,9 @@ function generateTailoredUnitsForStudent(student: any) {
           {
             grade: '1학년 (기초 소양)' as const,
             stageName: '기초 개념 정립 및 문제의식 발굴',
-            subject: '통합교과',
-            focus: '기초 원리 탐색',
-            topicIdea: `${mainInterest.slice(0, 16)} 관련 기초 개념 및 문헌 조사`,
+            subject: getGrade1CommonSubject(cat),
+            focus: '교과서 기초 원리 탐색',
+            topicIdea: `${sub.subject.split('(')[0].trim()} 기초 개념과 '${mainInterest.slice(0, 16)}' 관련 사례 조사`,
             connectionReason: '1학년 공통 교육과정 기초 소양 정립',
           },
           {
@@ -2093,9 +2251,9 @@ function generateTailoredUnitsForStudent(student: any) {
           {
             grade: '3학년 (융합 발전)' as const,
             stageName: '차년도 후속 심화 및 융합 과제',
-            subject: '진로선택 심화 과목',
-            focus: '다학제간 확장 및 메타인지적 검증',
-            topicIdea: `${sub.topic.slice(0, 20)}의 한계 극복을 위한 융합 심화 연구`,
+            subject: getGrade3ElectiveSubject(cat),
+            focus: '심화 확장 및 메타인지적 검증',
+            topicIdea: `${sub.topic.slice(0, 24)}의 한계 극복을 위한 후속 심화 연구`,
             connectionReason: '전공 전문성과 성숙한 연구자적 자질 발전',
           },
         ],
@@ -2125,6 +2283,7 @@ app.post('/api/ai/wizard-tailor-curriculum', async (req, res) => {
     if (!hasRealApiKey || !ai) {
       return res.json({
         success: true,
+        source: 'database',
         interest: mainInterest,
         targetCareer,
         targetMajor,
@@ -2132,72 +2291,192 @@ app.post('/api/ai/wizard-tailor-curriculum', async (req, res) => {
       });
     }
 
-    // Call Gemini with timeout race to optionally enhance titles with strict educational standards
-    const prompt = `당신은 대한민국 고교 2015/2022 개정 교육과정 및 학생부종합전형(학종) 전문 수석 컨설턴트입니다.
+    const keywords = Array.isArray(student.interestKeywords)
+      ? student.interestKeywords.join(', ')
+      : '';
+    const preferredSubjects = Array.isArray(student.preferredSubjects)
+      ? student.preferredSubjects.join(', ')
+      : '';
+
+    const prompt = `당신은 대한민국 고등학교 교육과정 및 학생부종합전형(학종) 전문 컨설턴트입니다.
 [학생 프로필]
 - 희망 진로: ${targetCareer}
 - 목표 학과: ${targetMajor}
 - 핵심 관심 분야: ${mainInterest}
+- 세부 관심 키워드: ${keywords || '없음'}
+- 관심·선택 교과목: ${preferredSubjects || '전 교과 균형'}
 
-2022/2015 개정 고등학교 교육과정 기준 6개 교과군(수학, 과학, 사회/윤리, 국어, 영어, 정보/AI)에 대해 학생의 관심사와 교과 교육과정 성취기준이 유기적으로 결합된 고교생 맞춤 단원명과 심화 탐구 주제를 제안해주세요.
+6개 교과군(math, science, social, korean, english, tech)별로 각 3개씩(기본 탐구 2개 level:"basic" + 심화 탐구 1개 level:"advanced", 총 18개) 학생의 관심 분야와 해당 고교 교과의 고유 성취기준이 유기적으로 융합된 단원 및 탐구 주제를 생성하세요.
 
-[엄격한 작성 규칙 - 학생부 종합전형 품질 기준]
-1. 절대 '${mainInterest} 시스템의 시간에 따른...', '${mainInterest} 도입에 따른 사회적...' 같은 판에 박힌 기계적 접두어/접미어 템플릿(Mad-libs)을 쓰지 마세요.
-2. 각 교과의 고유한 교육과정 핵심 개념(예: 수학의 로렌츠 곡선과 정적분/조건부 확률, 과학의 대기 순환과 열수지/효소 반응속도, 사회의 롤스 정의론과 외부효과, 국어의 툴민 논증 모델과 프레이밍, 영어의 IMRaD 구조와 Hedging 어휘, 정보의 GeoPandas 공간 버퍼/알고리즘)과 학생의 관심 분야를 구체적으로 융합한 온전한 완성형 단원명을 작성하세요.
-3. 고등학생이 1~2학기 동안 학교 과학실, 공공데이터(data.go.kr), KOSIS, RISS 선행 논문, 영문 저널 초록으로 실제 수행 가능한 실현 가능한 탐구여야 합니다.
+[엄격한 규칙]
+1. 각 교과군에는 반드시 해당 교과목(예: english는 영어Ⅰ·영어Ⅱ·심화 영어 독해와 작문 등 순수 영어 교과만, math는 수학·미적분·확률과 통계·기하만) 내용만 작성하고 절대 다른 교과 내용을 섞지 마세요.
+2. 각 교과군마다 반드시 level:"basic" 2개와 level:"advanced" 1개 순서를 정확히 지키세요.
+3. 기계적 템플릿 문구를 쓰지 말고, '${mainInterest}'(${keywords || '핵심 쟁점'})의 실제 쟁점을 해당 교과 핵심 원리와 결합하세요.
 
 반드시 유효한 JSON 형식으로만 응답하세요:
 {
   "units": [
     {
-      "subjectCategory": "math | science | social | korean | english | tech",
-      "subjectName": "교과목명 (예: 수학 (미적분 / 확률과 통계), 과학/환경 (지구과학Ⅰ / 물리학Ⅰ) 등)",
-      "unitName": "교과 개념과 관심사가 융합된 완성형 단원명 (35자 내외, 말줄임 금지)",
-      "unitConcepts": ["핵심개념1", "핵심개념2", "핵심개념3", "핵심개념4"],
-      "keyPrinciples": "해당 교과 개념이 학생의 관심사와 왜, 어떻게 융합되는지 구체적인 학문적 이유 (1~2문장)",
-      "samplePhenomena": ["관찰 현상 및 실증 가설1", "구체적 탐구 방법론2", "기대되는 지적 성장3"]
+      "subjectCategory": "math",
+      "level": "basic",
+      "subjectName": "교과목명",
+      "unitName": "관심사와 해당 교과 원리가 결합된 완성형 단원·탐구 주제명 (22~38자)",
+      "unitConcepts": ["핵심교과개념1", "핵심교과개념2", "핵심교과개념3"],
+      "keyPrinciples": "이 교과 원리가 관심사 문제 해결에 쓰이는 학문적 이유 (1문장)",
+      "inquiryQuestion": "탐구를 시작하는 핵심 질문 (1문장)",
+      "samplePhenomena": ["관찰 현상 및 실증 가설1", "활용 데이터·탐구 도구2", "기대되는 학업 역량3"],
+      "readingRecommendation": "《권장도서명》(저자)"
     }
   ]
 }`;
 
-    const generatePromise = ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-    });
-
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('AI request timeout')), 45000)
-    );
-
     try {
-      const response = await Promise.race([generatePromise, timeoutPromise]);
-      const text = response.text || '';
-      const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
+      const parsed = await callGeminiFastJSON(prompt, 32000);
 
-      if (parsed && Array.isArray(parsed.units) && parsed.units.length >= 5) {
-        // Merge Gemini unit names into our complete 5-step tailored plans
-        const mergedUnits = defaultTailoredUnits.map((defUnit) => {
-          const match = parsed.units.find((u: any) => u.subjectCategory === defUnit.subjectCategory);
-          if (match) {
-            return {
-              ...defUnit,
-              subjectName: match.subjectName || defUnit.subjectName,
-              unitName: match.unitName || defUnit.unitName,
-              unitConcepts: match.unitConcepts?.length ? match.unitConcepts : defUnit.unitConcepts,
-              keyPrinciples: match.keyPrinciples || defUnit.keyPrinciples,
-              samplePhenomena: match.samplePhenomena?.length ? match.samplePhenomena : defUnit.samplePhenomena,
-            };
+      if (parsed && Array.isArray(parsed.units) && parsed.units.length >= 6) {
+        const categories = ['math', 'science', 'social', 'korean', 'english', 'tech'] as const;
+        const mergedUnits: any[] = [];
+        const nowTs = Date.now();
+
+        for (const cat of categories) {
+          const catDefaults = defaultTailoredUnits.filter((d) => d.subjectCategory === cat);
+          const catMatches = parsed.units.filter((u: any) => {
+            const normCat = normalizeWizardCategory(u?.subjectCategory, u?.subjectName);
+            return normCat === cat && isSubjectConsistentWithCategory(cat, u?.subjectName);
+          });
+
+          if (catMatches.length === 0) {
+            mergedUnits.push(...catDefaults);
+            continue;
           }
-          return defUnit;
-        });
+
+          // Strictly assemble 3 slots: [basic #1, basic #2, advanced #1]
+          const aiBasics = catMatches.filter((u: any) => String(u?.level || '').toLowerCase() !== 'advanced');
+          const aiAdvs = catMatches.filter((u: any) => String(u?.level || '').toLowerCase() === 'advanced');
+          const usedMatches = new Set<any>();
+
+          const pickMatchForSlot = (slotIdx: number) => {
+            if (slotIdx < 2) {
+              const b = aiBasics.find((x: any) => !usedMatches.has(x)) || catMatches.find((x: any) => !usedMatches.has(x));
+              if (b) {
+                usedMatches.add(b);
+                return b;
+              }
+              return null;
+            } else {
+              const a = aiAdvs.find((x: any) => !usedMatches.has(x)) || catMatches.find((x: any) => !usedMatches.has(x));
+              if (a) {
+                usedMatches.add(a);
+                return a;
+              }
+              return null;
+            }
+          };
+
+          for (let mIdx = 0; mIdx < 3; mIdx++) {
+            const defUnit = catDefaults[mIdx] || catDefaults[0] || defaultTailoredUnits[0];
+            const match = pickMatchForSlot(mIdx);
+            const level: 'basic' | 'advanced' = mIdx === 2 ? 'advanced' : 'basic';
+            const difficultyRating = level === 'advanced' ? 5 : mIdx === 0 ? 2 : 3;
+            const suitability =
+              level === 'advanced'
+                ? '고2~3 전공 심화 · 정량 모델링 추천'
+                : mIdx === 0
+                ? '고1~2 교과서 핵심 개념 중심'
+                : '고1~2 실생활 사례 · 통계 탐색 추천';
+
+            if (!match) {
+              mergedUnits.push({
+                ...defUnit,
+                id: `ai-unit-${cat}-${mIdx}-${nowTs}`,
+                subjectCategory: cat,
+                level,
+                difficultyRating,
+                suitability,
+              });
+              continue;
+            }
+
+            const concepts = Array.isArray(match.unitConcepts) && match.unitConcepts.length > 0
+              ? match.unitConcepts
+              : defUnit.unitConcepts;
+            const phenomena = Array.isArray(match.samplePhenomena) && match.samplePhenomena.length > 0
+              ? match.samplePhenomena
+              : defUnit.samplePhenomena;
+            const resolvedSubjectName = match.subjectName || defUnit.subjectName;
+            const resolvedUnitName = match.unitName || defUnit.unitName;
+            const subjShort = resolvedSubjectName.split('(')[0].trim();
+            const topicTitle = `[${subjShort}] ${resolvedUnitName}`;
+            const inquiryQ = match.inquiryQuestion || phenomena[0] || defUnit.tailoredPlan.inquiryQuestion;
+            const books = match.readingRecommendation || defUnit.tailoredPlan.relatedBooks;
+
+            mergedUnits.push({
+              ...defUnit,
+              id: `ai-unit-${cat}-${mIdx}-${nowTs}`,
+              subjectCategory: cat,
+              level,
+              difficultyRating,
+              suitability,
+              subjectName: resolvedSubjectName,
+              unitName: resolvedUnitName,
+              unitConcepts: concepts,
+              keyPrinciples: match.keyPrinciples || defUnit.keyPrinciples,
+              samplePhenomena: phenomena,
+              tailoredPlan: {
+                ...defUnit.tailoredPlan,
+                topicTitle,
+                inquiryQuestion: inquiryQ,
+                observedPhenomenon: match.keyPrinciples || phenomena[0] || defUnit.tailoredPlan.observedPhenomenon,
+                phenomenaChips: phenomena,
+                selectedLens: concepts[0] || defUnit.tailoredPlan.selectedLens,
+                lensOptions: concepts.length >= 2 ? concepts : defUnit.tailoredPlan.lensOptions,
+                questionOptions: [
+                  inquiryQ,
+                  `${resolvedUnitName} 관점에서 '${mainInterest}'의 핵심 변인을 어떻게 검증할 수 있는가?`,
+                  `${resolvedSubjectName}의 교과 원리(${concepts[0] || '핵심 개념'})를 적용한 후속 심화 검증 질문은 무엇인가?`,
+                ],
+                clicheTwist: {
+                  approach: `[차별화 융합] ${subjShort} 정밀 연계`,
+                  subTopic: resolvedUnitName,
+                  academicLens: concepts[0] || defUnit.tailoredPlan.clicheTwist.academicLens,
+                  inquiryQuestion: inquiryQ,
+                },
+                snowballRoadmap: [
+                  {
+                    grade: '1학년 (기초 소양)' as const,
+                    stageName: '기초 개념 정립 및 문제의식 발굴',
+                    subject: getGrade1CommonSubject(cat),
+                    focus: '교과서 기초 원리 탐색',
+                    topicIdea: `${subjShort} 기초 개념과 '${mainInterest.slice(0, 16)}' 관련 사례 조사`,
+                    connectionReason: '1학년 공통 교육과정 기초 소양 정립',
+                  },
+                  {
+                    grade: '2학년 (전공 심화)' as const,
+                    stageName: '현재 탐구 과제 (선택 과목 정밀 연계)',
+                    subject: resolvedSubjectName,
+                    focus: '교과 핵심 원리 적용 및 심화 탐구',
+                    topicIdea: resolvedUnitName,
+                    connectionReason: match.keyPrinciples || defUnit.keyPrinciples,
+                  },
+                  {
+                    grade: '3학년 (융합 발전)' as const,
+                    stageName: '차년도 후속 심화 및 융합 과제',
+                    subject: getGrade3ElectiveSubject(cat),
+                    focus: '심화 확장 및 메타인지적 검증',
+                    topicIdea: `${resolvedUnitName.slice(0, 24)}의 한계 극복을 위한 후속 심화 연구`,
+                    connectionReason: '전공 전문성과 성숙한 연구자적 자질 발전',
+                  },
+                ],
+                motivation: `교과 수업 중 [${resolvedSubjectName} - ${resolvedUnitName}] 단원을 학습하며 교과서 이론이 실제 문제에 적용되는 원리에 깊은 호기심을 갖게 됨. 평소 희망해 온 '${targetCareer}' 진로와 '${mainInterest}' 관심사를 교과 핵심 개념(${concepts.slice(0, 2).join(', ')})과 결합해 자기주도적 탐구 과제로 구체화함.`,
+                relatedBooks: books,
+              },
+            });
+          }
+        }
 
         return res.json({
           success: true,
+          source: 'gemini',
           interest: mainInterest,
           targetCareer,
           targetMajor,
@@ -2205,11 +2484,12 @@ app.post('/api/ai/wizard-tailor-curriculum', async (req, res) => {
         });
       }
     } catch (e) {
-      console.warn('Gemini curriculum tailor timeout or error, serving high-precision generator:', (e as any)?.message);
+      console.warn('Gemini curriculum tailor error, serving fallback:', (e as any)?.message);
     }
 
     return res.json({
       success: true,
+      source: 'database',
       interest: mainInterest,
       targetCareer,
       targetMajor,
@@ -2220,6 +2500,7 @@ app.post('/api/ai/wizard-tailor-curriculum', async (req, res) => {
     const { student = {} } = req.body || {};
     return res.json({
       success: true,
+      source: 'database',
       interest: student.mainInterestTopic || '교과 연계 첨단 기술 쟁점',
       tailoredUnits: generateTailoredUnitsForStudent(student),
     });
@@ -2228,28 +2509,29 @@ app.post('/api/ai/wizard-tailor-curriculum', async (req, res) => {
 
 // 5-2. API: CurriculumInquiryWizard 단일 단원 5단계 심화 최적화
 app.post('/api/ai/wizard-tailor', async (req, res) => {
-  const { student = {}, unitId = '', unitName = '', subjectName = '' } = req.body;
+  const { student = {}, unitId = '', unitName = '', subjectName = '', category = '' } = req.body;
 
   const targetCareer = student.targetCareer || '전문 연구원';
   const targetMajor = student.targetMajor || '자연과학/공학 계열';
   const mainInterest = student.mainInterestTopic || '교과 연계 첨단 기술 쟁점';
+  const requestedCat = normalizeWizardCategory(category || req.body.unit?.subjectCategory, subjectName);
 
   const defaultUnits = generateTailoredUnitsForStudent(student);
   const matchedUnit = defaultUnits.find(
     (u) =>
       u.id === unitId ||
       u.subjectName === subjectName ||
-      u.subjectCategory === req.body.unit?.subjectCategory
+      (requestedCat && u.subjectCategory === requestedCat)
   ) || defaultUnits[0];
 
   const fallbackPlan = matchedUnit.tailoredPlan;
 
   try {
     if (!hasRealApiKey || !ai) {
-      return res.json({ success: true, plan: fallbackPlan });
+      return res.json({ success: true, source: 'database', plan: fallbackPlan });
     }
 
-    const prompt = `대한민국 고등학교 학생부종합전형(학종) 전문 컨설턴트로서, 아래 학생의 진로와 관심사에 맞추어 '교과 단원 연계 5단계 탐구 길잡이' 전체 내용을 완벽하게 작성해주세요.
+    const prompt = `대한민국 고등학교 학생부종합전형(학종) 전문 컨설턴트로서, 아래 학생의 진로와 관심사에 맞추어 '교과 단원 연계 5단계 탐구 길잡이' 전체 내용을 간결하고 밀도 있게 작성해주세요.
 
 [학생 프로필]
 - 진로 희망(목표 직업): ${targetCareer}
@@ -2257,23 +2539,25 @@ app.post('/api/ai/wizard-tailor', async (req, res) => {
 - 핵심 관심 연구 분야 / 최근 호기심: ${mainInterest}
 - 현재 선택된 단원: ${unitName} (${subjectName})
 
+반드시 '${mainInterest}'의 실제 핵심 이슈와 '${subjectName}' 교과 단원 원리를 구체적으로 결합하여 작성하세요 (기계적 템플릿 치환 금지).
+
 다음 JSON 형식으로만 응답해주세요:
 {
   "topicTitle": "구체적이고 학술적인 탐구 주제명 ([교과명] 포함)",
   "inquiryQuestion": "학생의 관심사와 단원 개념이 결합된 핵심 탐구 질문 1개",
-  "observedPhenomenon": "현상 관찰 진술문",
+  "observedPhenomenon": "현상 관찰 진술문 (1~2문장)",
   "phenomenaChips": ["맞춤 관찰 현상 예시 1", "맞춤 관찰 현상 예시 2", "맞춤 관찰 현상 예시 3"],
   "selectedLens": "대표 학문적 렌즈",
   "lensOptions": ["학문적 렌즈 1", "학문적 렌즈 2", "학문적 렌즈 3"],
   "questionOptions": ["핵심 질문 옵션 1", "핵심 질문 옵션 2", "핵심 질문 옵션 3"],
-  "recommendedMethodology": "simulation" 또는 "public_data" 또는 "literature" 또는 "practical_policy",
+  "recommendedMethodology": "simulation | public_data | literature | practical_policy",
   "clicheTwist": {
     "approach": "[차별화 접근법 명칭]",
     "subTopic": "비틀기 세부 주제명",
     "academicLens": "적용 학문적 렌즈",
     "inquiryQuestion": "차별화된 심화 질문"
   },
-  "motivation": "교과 수업 중 호기심과 학생의 진로를 연결한 구체적인 탐구 동기 (250~350자)",
+  "motivation": "교과 수업 중 호기심과 학생의 진로를 연결한 구체적인 탐구 동기 (200~280자)",
   "snowballRoadmap": [
     {
       "grade": "1학년 (기초 소양)",
@@ -2309,28 +2593,509 @@ app.post('/api/ai/wizard-tailor', async (req, res) => {
   "deliverables": "구체적 산출물 명칭"
 }`;
 
-    const generatePromise = ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-    });
+    const parsed = await callGeminiFastJSON(prompt, 25000);
 
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('AI request timeout')), 45000)
-    );
-
-    const response = await Promise.race([generatePromise, timeoutPromise]);
-    const text = response.text || '';
-    const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(cleaned);
-
-    return res.json({ success: true, plan: parsed });
+    return res.json({ success: true, source: 'gemini', plan: parsed });
   } catch (error) {
     console.error('Error in wizard-tailor, serving fallback:', (error as any)?.message || error);
-    return res.json({ success: true, plan: fallbackPlan });
+    return res.json({ success: true, source: 'database', plan: fallbackPlan });
+  }
+});
+
+// Helper to transform casual or raw curiosity sentences into a refined high-school academic research phrase
+function cleanAndRefineInterestToAcademicTerm(
+  rawInterest: string,
+  concept: string,
+  subjectGroup: string,
+  methodology: string,
+  additionalKeyword?: string
+): string {
+  // Strip conversational endings and question markers
+  const text = (rawInterest || '전공 연계 교과 융합 탐구')
+    .trim()
+    .replace(/[?？!！"'"'“”\[\]\(\)\{\}]/g, ' ')
+    .replace(
+      /(궁금해요|궁금합니다|궁금함|알고 싶어요|알고 싶음|알고싶다|알아보고 싶다|알아보고 싶음|왜 그런지|어떤 원리인지|어떻게 되는지|어떻게 될까|어떤 영향을 미칠까|이유가 뭘까|이유는 무엇일까)/g,
+      ' '
+    )
+    .replace(/(에 대해|에 대한|에 관하여|관련해서|관련하여|관련된|바탕으로|활용하여|중심으로|을 통해|를 통해)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const cleanConcept = (concept || '교과 핵심 개념').replace(/\s*\(.*?\)/g, '').trim();
+  const cleanMethod = (methodology || '실증 분석').split('-')[0].split('(')[0].trim();
+  const condText = additionalKeyword?.trim() ? ` (${additionalKeyword.trim()} 변인)` : '';
+
+  // Extract core keywords
+  const tokens = text.split(' ').filter((t) => t.length >= 2);
+  const coreNoun = tokens.length > 0 ? tokens.slice(0, 3).join(' ') : text;
+
+  // Fully dynamic academic title synthesized from all 3 user choices:
+  return `${cleanConcept} 원리를 적용한 ${coreNoun}의 ${cleanMethod} 기반 심화 메커니즘 규명${condText}`;
+}
+
+// Helper for offline fallback for Question Refinement Wizard
+function generateFallbackRefinedQuestions(
+  interest: string,
+  targetMajor: string,
+  subjectGroup: string,
+  curriculumConcept: string,
+  methodology: string,
+  additionalKeyword?: string,
+  methodologyDetails?: string
+) {
+  const cleanConcept = (curriculumConcept || '교과 핵심 원리 및 변화율').replace(/\s*\(.*?\)/g, '').trim();
+  const cleanMethod = (methodology || '실증 분석').split('-')[0].trim();
+  const academicTopic = cleanAndRefineInterestToAcademicTerm(
+    interest,
+    cleanConcept,
+    subjectGroup,
+    cleanMethod,
+    additionalKeyword
+  );
+
+  return {
+    synthesizedAcademicTopic: academicTopic,
+    refinedQuestions: [
+      {
+        id: 'q-ref-1-hypothesis',
+        type: 'hypothesis' as const,
+        typeLabel: '가설 검증형 (Empirical Hypothesis)',
+        title: `${cleanConcept} 원리를 적용한 ${academicTopic} 상관성 실증 분석`,
+        question: `${cleanConcept}의 조작 변인 제어가 ${academicTopic} 현상의 신뢰성 및 반응 효율에 어떠한 정량적 영향을 미치는가?`,
+        hypothesis: `${cleanConcept} 관련 조작 변인의 수치를 체계적으로 제어할수록 ${academicTopic}의 오차율이 통계적으로 유의미하게 감소할 것이다.`,
+        variables: {
+          independent: `${cleanConcept} 관련 정량적 제어 변수 (조건별 차등 제어)`,
+          dependent: `${academicTopic}의 측정 결과값 (인식률, 에너지 전환율, 오차율)`,
+          control: '주변 환경 변수(온도, 샘플 크기, 측정 주기, 수집 기간)',
+        },
+        stepByStepProcedure: [
+          '1단계: 교육과정 성취기준 연계 학술 문헌 조사 및 구체적 인과 가설 수립',
+          `2단계: '${cleanMethod}' 도구를 활용한 원천 데이터셋 정제 및 측정/실험 환경 세팅`,
+          '3단계: 변인 통제 하에 조건별 반복 측정 및 통계적 유의성 검증(p-value, R²)',
+          '4단계: 정량 데이터 시각화, 결론 도출 및 탐구의 한계점과 후속 과제 작성',
+        ],
+        recommendedDataOrTools: [
+          cleanMethod.includes('데이터') ? '공공데이터포털(data.go.kr)' : '정밀 계측 센서(MBL/아두이노)',
+          'Python (pandas, seaborn) 또는 Excel 고급 통계 분석 패키지',
+          '학술 연구 정보 포털(RISS / KCI 논문)',
+        ],
+        curriculumAchievementCode: `[2022/2015 교육과정] ${cleanConcept} 관련 성취기준 연계`,
+        expectedDraftRecordSnippet: `교과 수업 중 학습한 '${cleanConcept}'의 메커니즘을 심화 탐구하기 위해, '${academicTopic}' 과제를 기획함. ${cleanMethod} 기법을 적용해 변인 간 상관관계를 정량적으로 검증하고 과학적 가설을 입증하는 탁월한 자기주도적 연구 역량을 발휘함.`,
+      },
+      {
+        id: 'q-ref-2-modeling',
+        type: 'modeling' as const,
+        typeLabel: '수리·알고리즘 모델링형 (Mathematical Modeling)',
+        title: `${academicTopic} 최적화를 위한 ${cleanConcept} 기반 수리적 근사 모델 설계`,
+        question: `${cleanConcept}의 수학적 함수 및 변화율 관계식을 도입하여 ${academicTopic}의 성능을 최적화하는 수리 모델을 수립할 수 있는가?`,
+        hypothesis: `${cleanConcept}의 미적분학적 극값 도출 또는 통계적 확률 분포를 반영한 수리 알고리즘이 기존의 경험적 방식보다 예측 정확도를 향상시킬 것이다.`,
+        variables: {
+          independent: '수리 모델에 입력되는 가중치 파라미터 및 초기 임계값',
+          dependent: '수리 모델의 오차 수렴 속도 및 목표 지표 최적화 달성률',
+          control: '알고리즘 연산 환경 및 입력 데이터 표준화 규격',
+        },
+        stepByStepProcedure: [
+          `1단계: ${academicTopic} 대상 시스템의 물리적 메커니즘을 ${cleanConcept} 개념으로 기호화`,
+          '2단계: 기하학적 그래프 툴(GeoGebra) 또는 코딩을 활용한 수식 시뮬레이션 환경 구축',
+          '3단계: 다양한 파라미터 조건에서의 출력 결과 비교 및 최적 극값(극대/극소) 산출',
+          '4단계: 실제 측정치와 모델 예측치 간의 잔차 분석 및 모델 보정 작업 수행',
+        ],
+        recommendedDataOrTools: [
+          'GeoGebra / Desmos 수학 모델링 소프트웨어',
+          'Python NumPy / SciPy 수치해석 시뮬레이션 환경',
+          '캐글(Kaggle) 오픈 데이터셋',
+        ],
+        curriculumAchievementCode: `[2022/2015 교육과정] ${cleanConcept} 수학적 모델링 및 문제해결`,
+        expectedDraftRecordSnippet: `'${academicTopic}'의 기술적 난제를 해결하기 위해 ${cleanConcept} 개념을 수리적으로 모델링함. 수학적 관계식을 정립하고 컴퓨터 시뮬레이션을 통해 최적화 조건을 산출해 냈으며, 수학적 개념을 실제 공학적 문제에 응용하는 융합적 사고력을 과시함.`,
+      },
+      {
+        id: 'q-ref-3-critical',
+        type: 'critical' as const,
+        typeLabel: '비판적 대안 제시형 (Critical Problem-Solving)',
+        title: `${academicTopic}의 현존 한계점 극복을 위한 ${cleanConcept} 관점의 대안 메커니즘 검토`,
+        question: `${academicTopic}의 기존 상용화 방식이나 선행 연구가 지닌 한계점을 ${cleanConcept}의 메커니즘을 통해 어떻게 보완·개선할 수 있는가?`,
+        hypothesis: `기존 방식의 취약 지점에 ${cleanConcept} 원리를 결합할 경우, 시스템 오작동률 또는 사회적 부작용을 유의미하게 개선할 수 있을 것이다.`,
+        variables: {
+          independent: '개선 메커니즘 적용 여부 및 대안 설계 프로토콜',
+          dependent: '시스템 내구성, 인식 정확도 향상 비율 또는 부작용 완화도',
+          control: '비교 기준이 되는 기존 표준 프로토콜 환경',
+        },
+        stepByStepProcedure: [
+          `1단계: 선행 논문 3편 분석을 통해 ${academicTopic}의 기술적·학문적 한계점 규명`,
+          `2단계: '${cleanConcept}' 교과 지식을 응용한 대안 메커니즘 및 개선 가설 설계`,
+          `3단계: '${cleanMethod}'를 활용한 기존 방식 vs 개선 대안 간 정량 비교 시뮬레이션`,
+          '4단계: 공학적/사회적 타당성 평가 및 실제 고교 수준 실천 방안 보고서 작성',
+        ],
+        recommendedDataOrTools: [
+          '학술 연구 정보 포털(RISS / DBpia / ScienceDirect)',
+          '비교 분석 매트릭스 및 A/B 테스트 시뮬레이터',
+          '국가 기술 표준 및 정책 연구 보고서',
+        ],
+        curriculumAchievementCode: `[2022/2015 교육과정] ${cleanConcept} 비판적 평가 및 대안 창출`,
+        expectedDraftRecordSnippet: `'${academicTopic}' 분야의 기존 기술적 한계에 비판적 문제의식을 품고, ${cleanConcept}의 원리를 재해석하여 실질적인 보완책을 제시함. 선행 문헌을 다각도로 비교 분석하여 대안을 설계하는 깊이 있는 학문적 성찰력이 돋보임.`,
+      },
+    ],
+  };
+}
+
+// 6. API: 주제 지도 · 질문 좁히기 3단계 유도 위저드 (Topic Refinement & Hypothesis Generation)
+app.post('/api/ai/refine-inquiry-question', async (req, res) => {
+  try {
+    const {
+      interest = '인공지능 및 데이터 분석',
+      targetMajor = '공학/자연과학 계열',
+      subjectGroup = 'science',
+      curriculumConcept = '파동과 정보 전달',
+      methodology = '공공데이터 & 통계 분석',
+      methodologyDetails = '',
+      studentGrade = '고등학교 2학년',
+      additionalKeyword = '',
+    } = req.body || {};
+
+    const fallbackResult = generateFallbackRefinedQuestions(
+      interest,
+      targetMajor,
+      subjectGroup,
+      curriculumConcept,
+      methodology,
+      additionalKeyword,
+      methodologyDetails
+    );
+
+    if (!hasRealApiKey || !ai) {
+      return res.json({
+        success: true,
+        source: 'database',
+        synthesizedAcademicTopic: fallbackResult.synthesizedAcademicTopic,
+        adviceForStudent: `선생님의 지도 조언: 초기 호기심('${interest}')을 교육과정 속 '${curriculumConcept}' 개념 및 '${methodology}' 방법론과 결합하여, 단순 조사를 탈피하고 인과 가설과 수리적 절차를 갖춘 심화 학술 연구 질문으로 재구성했습니다.`,
+        refinedQuestions: fallbackResult.refinedQuestions,
+      });
+    }
+
+    const prompt = `당신은 대한민국 고등학교 학생부 종합전형(학종) 전문 진로진학 수석 컨설턴트이자 교과 교육과정 전문가입니다.
+반드시 아래 제공된 3가지 핵심 요소를 종합 융합하여, 완전히 새로운 학술 연구 주제명(synthesizedAcademicTopic)과 3대 심화 탐구 질문을 생성해주세요:
+
+[입력 요소 3대 축]
+1. 학생의 초기 관심사/키워드: "${interest}"
+2. 연계 고교 교과 및 단원 개념: "${subjectGroup}" 교과 - "${curriculumConcept}"
+3. 선택한 실증 방법론 및 도구: "${methodology}" (${methodologyDetails || ''})
+${additionalKeyword ? `4. 추가 가설/조건 변수: "${additionalKeyword}"` : ''}
+- 학생 희망 전공: ${targetMajor} (${studentGrade})
+
+[★★ 필수 규칙: 3대 축 종합 신규 생성 ★★]
+1. 【특정 예시 고정 출력 절대 금지】: 이전에 쓰였던 '자율주행 악천후 센서 보정' 같은 특정 예시 문장을 절대로 고정해서 출력하지 마십시오!
+2. 【3대 축 유기적 융합】: 오직 사용자가 전달한 [1. 관심사: ${interest}], [2. 교과 단원 개념: ${curriculumConcept}], [3. 실증 방법론: ${methodology}] 3가지를 정확히 결합하여, 학생부종합전형에서 대학 교수 및 입학사정관이 최고 등급(A+)으로 평가할 수 있는 독창적인 연구 주제를 새로 만들어야 합니다.
+   - 예시 A: 관심사 '소비자 마케팅' + 교과 '확률과 통계(조건부확률)' + 방법론 '빅데이터' -> '온라인 이커머스 고객 로그 데이터에서 베이즈 정리를 활용한 소비자 이탈 확률 정량 추정'
+   - 예시 B: 관심사 '인천 원도심 쇠퇴' + 교과 '통합사회(공간 불평등)' + 방법론 'GIS 공간정보' -> '인천 원도심 젠트리피케이션 지역의 지가 변동과 상권 생태계 공간 분포의 QGIS 버퍼링 분석'
+   - 예시 C: 관심사 '친환경 에너지' + 교과 '미적분(극대·극소)' + 방법론 '컴퓨터 시뮬레이션' -> '계절별 태양 고도각 변화에 따른 태양광 패널의 수광량 극대화 곡률 수리 모델링'
+3. 'synthesizedAcademicTopic'은 3대 축이 유기적으로 결합된 완성형 학술 연구 주제명(1문장)이어야 합니다.
+4. 도출되는 3대 질문의 제목, 질문 문장, 가설, 변인 구조(독립, 종속, 통제), 4단계 절차, 추천 도구, 성취기준, 세특 문안(150자)은 모두 완성된 한국어 학술 문장이어야 합니다.
+5. 교육부 기재요령(소논문, R&E 등 금지어 배제)을 철저히 준수하십시오.
+
+반드시 유효한 JSON 형식으로 응답하세요:
+{
+  "synthesizedAcademicTopic": "3대 축이 결합된 새롭고 완성도 높은 학술 연구 주제명 (1문장)",
+  "adviceForStudent": "선생님의 1:1 지도 코멘트 (왜 이 3가지 요소를 결합하여 질문을 재구성했는지 학생에게 주는 조언 2문장)",
+  "refinedQuestions": [
+    {
+      "id": "q-ref-1-hypothesis",
+      "type": "hypothesis",
+      "typeLabel": "가설 검증형 (Empirical Hypothesis)",
+      "title": "좁혀진 심화 탐구 주제명",
+      "question": "핵심 탐구 질문 (~인가? 또는 ~에 어떠한 영향을 미치는가? 형식의 완성된 학술 질문)",
+      "hypothesis": "연구 가설 (~할수록 ~할 것이다 형식)",
+      "variables": {
+        "independent": "조작/독립변수 (구체적)",
+        "dependent": "종속/결과변수 (구체적)",
+        "control": "통제변수"
+      },
+      "stepByStepProcedure": [
+        "1단계: 사전 학술 문헌 탐색 및 구체적 가설 설정",
+        "2단계: 데이터셋 정제 및 측정/실험 환경 세팅",
+        "3단계: 변인 통제 하 정량 분석 및 유의성 검증",
+        "4단계: 결론 도출 및 한계점, 후속 탐구 과제 정리"
+      ],
+      "recommendedDataOrTools": ["도구/데이터1", "도구/데이터2", "소프트웨어3"],
+      "curriculumAchievementCode": "[12교과00-00] 핵심 성취기준",
+      "expectedDraftRecordSnippet": "학교생활기록부 교과세특 예상 기재 문안 (150자 내외)"
+    },
+    {
+      "id": "q-ref-2-modeling",
+      "type": "modeling",
+      "typeLabel": "수리·알고리즘 모델링형 (Mathematical Modeling)",
+      "title": "수리 모델링 탐구 주제명",
+      "question": "핵심 탐구 질문",
+      "hypothesis": "연구 가설",
+      "variables": {
+        "independent": "입력 파라미터",
+        "dependent": "목표 출력값",
+        "control": "알고리즘 환경"
+      },
+      "stepByStepProcedure": [
+        "1단계: 현상 수식화 및 변수 정의",
+        "2단계: 컴퓨터 시뮬레이션 환경 구축",
+        "3단계: 파라미터 변화에 따른 최적화 극값 산출",
+        "4단계: 오차율 분석 및 모델 정밀도 검증"
+      ],
+      "recommendedDataOrTools": ["도구/데이터1", "소프트웨어2"],
+      "curriculumAchievementCode": "[12교과00-00] 핵심 성취기준",
+      "expectedDraftRecordSnippet": "학교생활기록부 교과세특 예상 기재 문안 (150자 내외)"
+    },
+    {
+      "id": "q-ref-3-critical",
+      "type": "critical",
+      "typeLabel": "비판적 대안 제시형 (Critical Problem-Solving)",
+      "title": "비판적 개선 탐구 주제명",
+      "question": "핵심 탐구 질문",
+      "hypothesis": "연구 가설",
+      "variables": {
+        "independent": "개선 대안 적용 여부",
+        "dependent": "성능 개선율 또는 부작용 완화도",
+        "control": "비교 기준 표준 프로토콜"
+      },
+      "stepByStepProcedure": [
+        "1단계: 선행 연구 한계점 분석",
+        "2단계: 교과 원리 기반 대안 메커니즘 설계",
+        "3단계: 기존 방식 vs 대안 방식 비교 검증",
+        "4단계: 타당성 검토 및 실천 방안 제시"
+      ],
+      "recommendedDataOrTools": ["도구/데이터1", "도구/데이터2"],
+      "curriculumAchievementCode": "[12교과00-00] 핵심 성취기준",
+      "expectedDraftRecordSnippet": "학교생활기록부 교과세특 예상 기재 문안 (150자 내외)"
+    }
+  ]
+}`;
+
+    let responseText = '';
+    const modelsToTry = ['gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+    for (const modelName of modelsToTry) {
+      try {
+        const generatePromise = ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+          },
+        });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('AI request timeout')), 45000)
+        );
+        const resp = await Promise.race([generatePromise, timeoutPromise]);
+        if (resp.text) {
+          responseText = resp.text;
+          break;
+        }
+      } catch (mErr: any) {
+        console.warn(`Model ${modelName} in refine-inquiry-question failed, trying next:`, mErr?.message || mErr);
+      }
+    }
+
+    if (!responseText) {
+      throw new Error('All AI models failed or exceeded quota');
+    }
+
+    const cleaned = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+
+    return res.json({
+      success: true,
+      source: 'gemini',
+      synthesizedAcademicTopic: parsed.synthesizedAcademicTopic || fallbackResult.synthesizedAcademicTopic,
+      adviceForStudent:
+        parsed.adviceForStudent ||
+        '교과 개념과 실증 분석 도구를 결합하여 학술적 깊이를 극대화한 탐구 질문입니다.',
+      refinedQuestions: parsed.refinedQuestions || fallbackResult.refinedQuestions,
+    });
+  } catch (error) {
+    console.error('Error in refine-inquiry-question, serving fallback:', (error as any)?.message || error);
+    const {
+      interest = '',
+      targetMajor = '',
+      subjectGroup = 'science',
+      curriculumConcept = '',
+      methodology = '',
+      methodologyDetails = '',
+      additionalKeyword = '',
+    } = req.body || {};
+    const fallbackResult = generateFallbackRefinedQuestions(
+      interest,
+      targetMajor,
+      subjectGroup,
+      curriculumConcept,
+      methodology,
+      additionalKeyword,
+      methodologyDetails
+    );
+    return res.json({
+      success: true,
+      source: 'database',
+      synthesizedAcademicTopic: fallbackResult.synthesizedAcademicTopic,
+      adviceForStudent: `선생님의 지도 조언: 초기 호기심('${interest}')을 교육과정 속 '${curriculumConcept}' 개념 및 '${methodology}' 방법론과 결합하여, 단순 조사를 탈피하고 인과 가설과 수리적 절차를 갖춘 심화 학술 연구 질문으로 재구성했습니다.`,
+      refinedQuestions: fallbackResult.refinedQuestions,
+    });
+  }
+});
+
+// 7. API: 맞춤형 3개년 진로 로드맵 실시간 AI 생성 (Gemini 고속 JSON 체인)
+app.post('/api/ai/generate-roadmap', async (req, res) => {
+  try {
+    const { student = {} } = req.body || {};
+    const studentId = student.id || 'ai';
+    const targetCareer = student.targetCareer || '전문 연구원';
+    const targetMajor = student.targetMajor || '관련 전공 계열';
+    const mainInterest = student.mainInterestTopic || '교과 연계 심화 탐구';
+    const keywords = Array.isArray(student.interestKeywords)
+      ? student.interestKeywords.join(', ')
+      : '';
+    const preferredSubjects = Array.isArray(student.preferredSubjects)
+      ? student.preferredSubjects.join(', ')
+      : '';
+    const grade = student.grade || '고등학교 2학년';
+
+    const buildFallbackMilestones = () => {
+      const slots: Array<{
+        gradeSemester: '1학년 1학기' | '1학년 2학기' | '2학년 1학기' | '2학년 2학기' | '3학년 1학기';
+        stage: '기초 탐색기' | '심화 탐구기' | '융합 발전기';
+        category: '교과세특' | '동아리' | '진로탐색' | '심화독서';
+        linkedSubject: string;
+      }> = [
+        { gradeSemester: '1학년 1학기', stage: '기초 탐색기', category: '교과세특', linkedSubject: '통합사회/통합과학' },
+        { gradeSemester: '1학년 1학기', stage: '기초 탐색기', category: '심화독서', linkedSubject: '국어/독서' },
+        { gradeSemester: '1학년 2학기', stage: '기초 탐색기', category: '동아리', linkedSubject: '동아리활동' },
+        { gradeSemester: '1학년 2학기', stage: '기초 탐색기', category: '진로탐색', linkedSubject: '진로활동' },
+        { gradeSemester: '2학년 1학기', stage: '심화 탐구기', category: '교과세특', linkedSubject: '선택 교과 심화' },
+        { gradeSemester: '2학년 1학기', stage: '심화 탐구기', category: '심화독서', linkedSubject: '전공/독서' },
+        { gradeSemester: '2학년 2학기', stage: '심화 탐구기', category: '교과세특', linkedSubject: '수리/통계 융합' },
+        { gradeSemester: '2학년 2학기', stage: '심화 탐구기', category: '동아리', linkedSubject: '동아리활동' },
+        { gradeSemester: '3학년 1학기', stage: '융합 발전기', category: '교과세특', linkedSubject: '진로선택/과제연구' },
+        { gradeSemester: '3학년 1학기', stage: '융합 발전기', category: '진로탐색', linkedSubject: '진로활동' },
+      ];
+      return slots.map((s, idx) => ({
+        id: `road-${studentId}-${idx + 1}`,
+        gradeSemester: s.gradeSemester,
+        stage: s.stage,
+        category: s.category,
+        title: `${s.linkedSubject}: ${mainInterest} 중심 ${s.stage} ${s.category} 탐구`,
+        description: `'${targetCareer}' 진로와 '${mainInterest}' 주제를 연결하여 ${s.gradeSemester} ${s.category} 단계에서 핵심 이론과 실증 사례를 탐구합니다.`,
+        status: idx < 4 ? 'completed' : idx < 7 ? 'in_progress' : 'planned',
+        keyCompetency: idx < 4 ? '학업역량 (기초 탐구)' : idx < 7 ? '진로역량 (전공 심화)' : '융합발전역량 (문제 해결)',
+        linkedSubject: s.linkedSubject,
+      }));
+    };
+
+    if (!hasRealApiKey || !ai) {
+      return res.json({
+        success: true,
+        source: 'database',
+        milestones: buildFallbackMilestones(),
+      });
+    }
+
+    const prompt = `당신은 대한민국 고등학교 학생부종합전형(학종) 전문 수석 컨설턴트입니다.
+아래 학생의 진로와 관심사·키워드를 바탕으로, 고교 3개년(1학년 1학기~3학년 1학기) 동안 지적 호기심이 점진적으로 심화(스노우볼 효과)되는 **10단계 맞춤형 진로 로드맵**을 JSON으로 설계하세요.
+
+[학생 프로필]
+- 현재 학년: ${grade}
+- 목표 직업(희망 진로): ${targetCareer}
+- 목표 학과: ${targetMajor}
+- 핵심 연구 관심 분야: "${mainInterest}"
+- 세부 관심 키워드: ${keywords || '없음'}
+- 관심·선택 교과목: ${preferredSubjects || '전 교과 균형'}
+
+[필수 설계 규칙 — 반드시 준수]
+1. 【기계적 키워드 끼워넣기 금지】: "'${mainInterest}' 관련 기본권 충돌...", "'${mainInterest}'의 사회적 영향..." 같은 판에 박힌 일반 템플릿 문장에 관심사 단어만 끼워 넣지 마세요. 반드시 "${mainInterest}"와 "${keywords}"의 실제 구체적 쟁점(제도·통계·실험·알고리즘·윤리·정책·현장 문제)을 고교 교과 개념과 결합한 고유한 과제를 작성하세요.
+2. 【정확한 10개 슬롯 구성】: 아래 10개 학기/영역 배치 순서를 정확히 지키세요:
+   - 1) 1학년 1학기 | 기초 탐색기 | 교과세특
+   - 2) 1학년 1학기 | 기초 탐색기 | 심화독서 (실제 존재하는 도서명과 저자 표기)
+   - 3) 1학년 2학기 | 기초 탐색기 | 동아리
+   - 4) 1학년 2학기 | 기초 탐색기 | 진로탐색
+   - 5) 2학년 1학기 | 심화 탐구기 | 교과세특
+   - 6) 2학년 1학기 | 심화 탐구기 | 심화독서 (실제 존재하는 전공 연계 도서명과 저자 표기)
+   - 7) 2학년 2학기 | 심화 탐구기 | 교과세특
+   - 8) 2학년 2학기 | 심화 탐구기 | 동아리
+   - 9) 3학년 1학기 | 융합 발전기 | 교과세특
+   - 10) 3학년 1학기 | 융합 발전기 | 진로탐색
+3. 【교육부 기재요령 준수】: '소논문', 'R&E', 외부 경시대회 등 학생부 금지 표현을 쓰지 마세요.
+4. 각 과제는 군더더기 없이 간결·명확하게 작성하세요.
+
+반드시 유효한 JSON으로만 응답하세요:
+{
+  "milestones": [
+    {
+      "gradeSemester": "1학년 1학기",
+      "stage": "기초 탐색기",
+      "category": "교과세특",
+      "linkedSubject": "구체적 고교 교과목명 또는 활동명",
+      "title": "구체적 교과/활동 탐구 과제 제목 (25~45자)",
+      "description": "구체적 탐구 절차, 사용 데이터·도구 또는 도서 핵심 쟁점 (1~2문장)",
+      "keyCompetency": "학업역량 / 진로역량 / 공동체역량 중 핵심 입증 포인트 (괄호 포함 15~30자)"
+    }
+  ]
+}`;
+
+    const parsed = await callGeminiFastJSON(prompt, 25000);
+    const rawList = Array.isArray(parsed?.milestones) ? parsed.milestones : [];
+    if (rawList.length < 6) {
+      throw new Error('Gemini returned insufficient roadmap milestones');
+    }
+
+    const validSemesters = ['1학년 1학기', '1학년 2학기', '2학년 1학기', '2학년 2학기', '3학년 1학기'] as const;
+    const validStages = ['기초 탐색기', '심화 탐구기', '융합 발전기'] as const;
+    const validCategories = ['교과세특', '동아리', '진로탐색', '심화독서'] as const;
+    const slotDefaults: Array<{
+      gradeSemester: (typeof validSemesters)[number];
+      stage: (typeof validStages)[number];
+      category: (typeof validCategories)[number];
+    }> = [
+      { gradeSemester: '1학년 1학기', stage: '기초 탐색기', category: '교과세특' },
+      { gradeSemester: '1학년 1학기', stage: '기초 탐색기', category: '심화독서' },
+      { gradeSemester: '1학년 2학기', stage: '기초 탐색기', category: '동아리' },
+      { gradeSemester: '1학년 2학기', stage: '기초 탐색기', category: '진로탐색' },
+      { gradeSemester: '2학년 1학기', stage: '심화 탐구기', category: '교과세특' },
+      { gradeSemester: '2학년 1학기', stage: '심화 탐구기', category: '심화독서' },
+      { gradeSemester: '2학년 2학기', stage: '심화 탐구기', category: '교과세특' },
+      { gradeSemester: '2학년 2학기', stage: '심화 탐구기', category: '동아리' },
+      { gradeSemester: '3학년 1학기', stage: '융합 발전기', category: '교과세특' },
+      { gradeSemester: '3학년 1학기', stage: '융합 발전기', category: '진로탐색' },
+    ];
+
+    const nowTs = Date.now();
+    const milestones = rawList.slice(0, 10).map((m: any, idx: number) => {
+      const def = slotDefaults[idx] || slotDefaults[slotDefaults.length - 1];
+      const gradeSemester = validSemesters.includes(m.gradeSemester) ? m.gradeSemester : def.gradeSemester;
+      const stage = validStages.includes(m.stage) ? m.stage : def.stage;
+      const category = validCategories.includes(m.category) ? m.category : def.category;
+      const status = idx < 4 ? 'completed' : idx < 7 ? 'in_progress' : 'planned';
+
+      return {
+        id: `road-${studentId}-${idx + 1}-${nowTs}`,
+        gradeSemester,
+        stage,
+        category,
+        title: String(m.title || `${mainInterest} ${category} 탐구`).trim(),
+        description: String(m.description || '').trim(),
+        status,
+        keyCompetency: String(m.keyCompetency || '진로역량 (전공 연계 심화 탐구)').trim(),
+        linkedSubject: m.linkedSubject ? String(m.linkedSubject).trim() : undefined,
+      };
+    });
+
+    return res.json({
+      success: true,
+      source: 'gemini',
+      milestones,
+    });
+  } catch (error) {
+    console.error('Error in generate-roadmap, serving fallback:', (error as any)?.message || error);
+    const student = req.body?.student || {};
+    const mainInterest = student.mainInterestTopic || '교과 연계 탐구';
+    const targetCareer = student.targetCareer || '전문 연구원';
+    return res.status(500).json({
+      success: false,
+      source: 'database',
+      error: `AI 로드맵 생성 중 일시적 오류 (${targetCareer} / ${mainInterest})`,
+    });
   }
 });
 

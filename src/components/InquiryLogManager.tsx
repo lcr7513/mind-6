@@ -25,6 +25,8 @@ import {
   GraduationCap,
   Zap,
 } from 'lucide-react';
+import { SentenceStarterHelperModal, SENTENCE_STARTERS, SentenceStarter } from './SentenceStarterHelper';
+import { AcademicSearchGuide } from './AcademicSearchGuide';
 
 interface InquiryLogManagerProps {
   student: Student;
@@ -71,6 +73,39 @@ export const InquiryLogManager: React.FC<InquiryLogManagerProps> = ({
     type: 'success' | 'info' | 'error';
     message: string;
   } | null>(null);
+
+  // Sentence Starters Helper States
+  const [isStarterModalOpen, setIsStarterModalOpen] = useState<boolean>(false);
+  const [activeStarterCategory, setActiveStarterCategory] = useState<'motivation' | 'process' | 'insights' | undefined>(undefined);
+  const [expandedStarterRow, setExpandedStarterRow] = useState<'motivation' | 'process' | 'insights' | null>(null);
+  const [starterToast, setStarterToast] = useState<string | null>(null);
+
+  const showStarterToast = (msg: string) => {
+    setStarterToast(msg);
+    setTimeout(() => setStarterToast(null), 3500);
+  };
+
+  const handleApplyStarterFromChip = (starter: SentenceStarter, targetField: 'motivation' | 'process' | 'insights') => {
+    if (targetField === 'motivation') {
+      setMotivation((prev) => (prev.trim() ? `${prev}\n\n${starter.starterTemplate}` : starter.starterTemplate));
+    } else if (targetField === 'process') {
+      setProcess((prev) => (prev.trim() ? `${prev}\n\n${starter.starterTemplate}` : starter.starterTemplate));
+    } else if (targetField === 'insights') {
+      setInsights((prev) => (prev.trim() ? `${prev}\n\n${starter.starterTemplate}` : starter.starterTemplate));
+    }
+    showStarterToast(`[${starter.tag}] 문장 시작 양식이 적용되었습니다. 대괄호 [ ] 내용을 내 탐구로 채워보세요!`);
+  };
+
+  const handleApplyStarterFromModal = (templateText: string, category: 'motivation' | 'process' | 'insights') => {
+    if (category === 'motivation') {
+      setMotivation((prev) => (prev.trim() ? `${prev}\n\n${templateText}` : templateText));
+    } else if (category === 'process') {
+      setProcess((prev) => (prev.trim() ? `${prev}\n\n${templateText}` : templateText));
+    } else if (category === 'insights') {
+      setInsights((prev) => (prev.trim() ? `${prev}\n\n${templateText}` : templateText));
+    }
+    showStarterToast(`문장 시작 양식이 적용되었습니다. 대괄호 [ ] 내용을 내 탐구로 채워보세요!`);
+  };
 
   const handleOpenNewModal = () => {
     setEditingRecordId(null);
@@ -255,6 +290,22 @@ export const InquiryLogManager: React.FC<InquiryLogManagerProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveStarterCategory(undefined);
+                setIsStarterModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+              title="동기, 과정, 느낀 점 세특 작성용 12가지 모범 문장 양식 열기"
+            >
+              <Sparkles className="w-4 h-4 text-amber-600" />
+              <span>세특 문장 시작 도우미</span>
+              <span className="text-[10px] bg-amber-200 text-amber-950 px-1.5 py-0.2 rounded-full font-black">
+                12개 템플릿
+              </span>
+            </button>
+
             {onRegenerateRecords && (
               <button
                 type="button"
@@ -435,6 +486,16 @@ export const InquiryLogManager: React.FC<InquiryLogManagerProps> = ({
                             {record.deliverables || '탐구 보고서 제출 완료'}
                           </p>
                         </div>
+                      </div>
+
+                      {/* Academic & Public Data 1-Click Search Guide */}
+                      <div className="pt-1">
+                        <AcademicSearchGuide
+                          inquiryQuestion={record.motivation || record.title}
+                          topicTitle={record.title}
+                          subject={record.subject}
+                          variant="compact"
+                        />
                       </div>
                     </div>
 
@@ -758,93 +819,275 @@ export const InquiryLogManager: React.FC<InquiryLogManagerProps> = ({
                 </div>
               </div>
 
-              {/* 1. Motivation with AI Draft button */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
+              {/* Academic & Public Data 1-Click Search Guide */}
+              <AcademicSearchGuide
+                inquiryQuestion={title || student.mainInterestTopic || '교과 연계 탐구'}
+                topicTitle={title}
+                subject={subject}
+                variant="compact"
+              />
+
+              {/* 1. Motivation with AI Draft button & Sentence Starters */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between flex-wrap gap-1.5">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <span>1. 탐구 동기 및 핵심 의문점 (교과 수업 연계)</span>
                     <span className="text-slate-400 font-normal text-[11px]">({motivation.length}자)</span>
                   </label>
-                  <button
-                    type="button"
-                    disabled={aiDraftLoading !== null}
-                    onClick={() => handleTriggerAiDraft('motivation')}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-700 text-[11px] font-bold rounded-lg border border-indigo-200 transition-colors cursor-pointer"
-                  >
-                    {aiDraftLoading === 'motivation' ? (
-                      <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
-                    ) : (
-                      <Sparkles className="w-3 h-3 text-indigo-600" />
-                    )}
-                    <span>AI 동기 초안 작성</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedStarterRow(expandedStarterRow === 'motivation' ? null : 'motivation')
+                      }
+                      className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-colors cursor-pointer ${
+                        expandedStarterRow === 'motivation'
+                          ? 'bg-amber-100 text-amber-900 border-amber-300 shadow-2xs'
+                          : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+                      }`}
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-600" />
+                      <span>문장 시작 도우미</span>
+                      <ChevronDown
+                        className={`w-3 h-3 transition-transform ${
+                          expandedStarterRow === 'motivation' ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={aiDraftLoading !== null}
+                      onClick={() => handleTriggerAiDraft('motivation')}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-700 text-[11px] font-bold rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                    >
+                      {aiDraftLoading === 'motivation' ? (
+                        <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
+                      ) : (
+                        <Sparkles className="w-3 h-3 text-indigo-600" />
+                      )}
+                      <span>AI 동기 초안 작성</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Inline Sentence Starters Chips for Motivation */}
+                {expandedStarterRow === 'motivation' && (
+                  <div className="p-3 bg-gradient-to-r from-amber-50/90 to-orange-50/70 border border-amber-200 rounded-xl space-y-2 animate-in fade-in">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-extrabold text-amber-950 flex items-center gap-1">
+                        💡 클릭 시 문장 서식이 대입됩니다 (대괄호 [ ] 내용을 채우세요):
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveStarterCategory('motivation');
+                          setIsStarterModalOpen(true);
+                        }}
+                        className="text-amber-800 font-bold hover:underline cursor-pointer"
+                      >
+                        상세 템플릿 전체 보기 ➔
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {SENTENCE_STARTERS.filter((s) => s.category === 'motivation').map((st) => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => handleApplyStarterFromChip(st, 'motivation')}
+                          className="px-2.5 py-1 bg-white hover:bg-amber-100/60 border border-amber-200/90 text-amber-900 rounded-lg text-[11px] font-bold transition-all shadow-2xs hover:border-amber-300 text-left flex items-center gap-1.5 cursor-pointer"
+                          title={st.starterTemplate}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                          <span>[{st.tag}] {st.patternName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <textarea
                   rows={3}
                   value={motivation}
                   onChange={(e) => setMotivation(e.target.value)}
-                  placeholder="수업 중 어떤 개념에서 호기심이 생겼는지, 왜 이 주제를 깊이 파고들게 되었는지 서술 (상단 AI 초안 작성 버튼을 누르면 자동 완성됩니다)"
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
-                />
-              </div>
-
-              {/* 2. Process with AI Draft button */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <span>2. 탐구 과정 및 실천 방법론 (구체적 실험/분석/독서)</span>
-                    <span className="text-slate-400 font-normal text-[11px]">({process.length}자)</span>
-                  </label>
-                  <button
-                    type="button"
-                    disabled={aiDraftLoading !== null}
-                    onClick={() => handleTriggerAiDraft('process')}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-700 text-[11px] font-bold rounded-lg border border-indigo-200 transition-colors cursor-pointer"
-                  >
-                    {aiDraftLoading === 'process' ? (
-                      <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
-                    ) : (
-                      <Sparkles className="w-3 h-3 text-indigo-600" />
-                    )}
-                    <span>AI 과정 초안 작성</span>
-                  </button>
-                </div>
-                <textarea
-                  rows={4}
-                  value={process}
-                  onChange={(e) => setProcess(e.target.value)}
-                  placeholder="학술 자료 분석, 수리적 모델링 식 도출, 코딩 시뮬레이션, 변인 통제 등 구체적인 실천 과정 서술"
+                  placeholder="수업 중 어떤 개념에서 호기심이 생겼는지, 왜 이 주제를 깊이 파고들게 되었는지 서술 (위 '문장 시작 도우미' 또는 'AI 초안 작성'을 활용하세요)"
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed font-sans"
                 />
               </div>
 
-              {/* 3. Insights with AI Draft button */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
+              {/* 2. Process with AI Draft button & Sentence Starters */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between flex-wrap gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <span>2. 탐구 과정 및 실천 방법론 (구체적 실험/분석/독서)</span>
+                    <span className="text-slate-400 font-normal text-[11px]">({process.length}자)</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedStarterRow(expandedStarterRow === 'process' ? null : 'process')
+                      }
+                      className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-colors cursor-pointer ${
+                        expandedStarterRow === 'process'
+                          ? 'bg-sky-100 text-sky-900 border-sky-300 shadow-2xs'
+                          : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'
+                      }`}
+                    >
+                      <Sparkles className="w-3 h-3 text-sky-600" />
+                      <span>문장 시작 도우미</span>
+                      <ChevronDown
+                        className={`w-3 h-3 transition-transform ${
+                          expandedStarterRow === 'process' ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={aiDraftLoading !== null}
+                      onClick={() => handleTriggerAiDraft('process')}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-700 text-[11px] font-bold rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                    >
+                      {aiDraftLoading === 'process' ? (
+                        <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
+                      ) : (
+                        <Sparkles className="w-3 h-3 text-indigo-600" />
+                      )}
+                      <span>AI 과정 초안 작성</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Inline Sentence Starters Chips for Process */}
+                {expandedStarterRow === 'process' && (
+                  <div className="p-3 bg-gradient-to-r from-sky-50/90 to-indigo-50/70 border border-sky-200 rounded-xl space-y-2 animate-in fade-in">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-extrabold text-sky-950 flex items-center gap-1">
+                        🔬 실증 분석 연구 단계 서식을 선택해 입력창에 삽입하세요:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveStarterCategory('process');
+                          setIsStarterModalOpen(true);
+                        }}
+                        className="text-sky-800 font-bold hover:underline cursor-pointer"
+                      >
+                        상세 템플릿 전체 보기 ➔
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {SENTENCE_STARTERS.filter((s) => s.category === 'process').map((st) => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => handleApplyStarterFromChip(st, 'process')}
+                          className="px-2.5 py-1 bg-white hover:bg-sky-100/60 border border-sky-200/90 text-sky-900 rounded-lg text-[11px] font-bold transition-all shadow-2xs hover:border-sky-300 text-left flex items-center gap-1.5 cursor-pointer"
+                          title={st.starterTemplate}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                          <span>[{st.tag}] {st.patternName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <textarea
+                  rows={4}
+                  value={process}
+                  onChange={(e) => setProcess(e.target.value)}
+                  placeholder="학술 자료 분석, 수리적 모델링 식 도출, 코딩 시뮬레이션, 공간정보(GIS) 분석 등 구체적인 실천 과정 서술"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed font-sans"
+                />
+              </div>
+
+              {/* 3. Insights with AI Draft button & Sentence Starters */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between flex-wrap gap-1.5">
                   <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <span>3. 배운 점, 지적 성장 및 향후 후속 탐구 계획</span>
                     <span className="text-slate-400 font-normal text-[11px]">({insights.length}자)</span>
                   </label>
-                  <button
-                    type="button"
-                    disabled={aiDraftLoading !== null}
-                    onClick={() => handleTriggerAiDraft('insights')}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-700 text-[11px] font-bold rounded-lg border border-indigo-200 transition-colors cursor-pointer"
-                  >
-                    {aiDraftLoading === 'insights' ? (
-                      <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
-                    ) : (
-                      <Sparkles className="w-3 h-3 text-indigo-600" />
-                    )}
-                    <span>AI 결과/성장 초안 작성</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedStarterRow(expandedStarterRow === 'insights' ? null : 'insights')
+                      }
+                      className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-colors cursor-pointer ${
+                        expandedStarterRow === 'insights'
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-300 shadow-2xs'
+                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                      }`}
+                    >
+                      <Sparkles className="w-3 h-3 text-emerald-600" />
+                      <span>문장 시작 도우미</span>
+                      <ChevronDown
+                        className={`w-3 h-3 transition-transform ${
+                          expandedStarterRow === 'insights' ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={aiDraftLoading !== null}
+                      onClick={() => handleTriggerAiDraft('insights')}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-700 text-[11px] font-bold rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                    >
+                      {aiDraftLoading === 'insights' ? (
+                        <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
+                      ) : (
+                        <Sparkles className="w-3 h-3 text-indigo-600" />
+                      )}
+                      <span>AI 결과/성장 초안 작성</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Inline Sentence Starters Chips for Insights */}
+                {expandedStarterRow === 'insights' && (
+                  <div className="p-3 bg-gradient-to-r from-emerald-50/90 to-teal-50/70 border border-emerald-200 rounded-xl space-y-2 animate-in fade-in">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-extrabold text-emerald-950 flex items-center gap-1">
+                        🌱 지적 성장, 전공 안목, 후속 탐구 서식을 선택해 입력창에 삽입하세요:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveStarterCategory('insights');
+                          setIsStarterModalOpen(true);
+                        }}
+                        className="text-emerald-800 font-bold hover:underline cursor-pointer"
+                      >
+                        상세 템플릿 전체 보기 ➔
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {SENTENCE_STARTERS.filter((s) => s.category === 'insights').map((st) => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => handleApplyStarterFromChip(st, 'insights')}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100/60 border border-emerald-200/90 text-emerald-900 rounded-lg text-[11px] font-bold transition-all shadow-2xs hover:border-emerald-300 text-left flex items-center gap-1.5 cursor-pointer"
+                          title={st.starterTemplate}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span>[{st.tag}] {st.patternName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <textarea
                   rows={3}
                   value={insights}
                   onChange={(e) => setInsights(e.target.value)}
                   placeholder="탐구 결과를 통해 무엇을 새롭게 알게 되었고, 자신의 진로 및 사고방식에 어떤 변화가 있었는지 서술"
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed font-sans"
                 />
               </div>
 
@@ -902,6 +1145,21 @@ export const InquiryLogManager: React.FC<InquiryLogManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Floating Toast Notification when starter is applied */}
+      {starterToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-xl flex items-center gap-2 border border-slate-700 animate-fade-in text-xs font-semibold max-w-md">
+          <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>{starterToast}</span>
+        </div>
+      )}
+
+      {/* Sentence Starter Helper Modal */}
+      <SentenceStarterHelperModal
+        isOpen={isStarterModalOpen}
+        onClose={() => setIsStarterModalOpen(false)}
+        onApplyStarter={handleApplyStarterFromModal}
+      />
     </div>
   );
 };

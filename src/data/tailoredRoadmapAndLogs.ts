@@ -1040,7 +1040,7 @@ export function generateTailoredInquiryRecords(student: Student): InquiryActivit
         deliverables: 'LTV 및 이탈률 예측 수리 모델링 리포트 (A4 5매), 로지스틱 회귀 시뮬레이션 시트',
         status: 'reviewed',
         teacherFeedback: {
-          author: '강수진 교사 (진로진학부장 / 경영지도)',
+          author: '이창렬 교사 (지리·통합사회 / 인성여고)',
           date: '2026-05-25',
           academicCompetency: '조건부 확률과 로지스틱 회귀식을 고객 행동 예측이라는 경영학적 실세계 문제에 완벽히 매핑하여 수식화해낸 우수한 수리적 탐구력이 돋보임.',
           careerCompetency: '마케팅 전문가 및 경영 데이터 분석가에게 요구되는 정량 분석 소양과 알고리즘적 사고를 고교 수준 이상으로 훌륭히 발휘함.',
@@ -1176,7 +1176,7 @@ export function generateTailoredInquiryRecords(student: Student): InquiryActivit
         deliverables: '베이즈 추론 수리 모델링 연구 보고서 (A4 5매), 지오지브라 조건부 확률 워크시트',
         status: 'reviewed',
         teacherFeedback: {
-          author: '강수진 교사 (진로진학부장 / 통합과학)',
+          author: '이창렬 교사 (지리·통합사회 / 인성여고)',
           date: '2026-05-22',
           academicCompetency: '조건부 확률과 베이즈 정리를 의생명 첨단 난제인 오프타깃 오류 검증에 완벽히 매핑하여 수식화해낸 뛰어난 수리적 추론력과 학업 성실성이 돋보임.',
           careerCompetency: '희망 전공인 의생명과학 분야의 최신 논문 데이터를 주도적으로 발굴하고 수치적으로 오차 한계를 검증하는 연구자적 기량이 탁월함.',
@@ -1235,7 +1235,7 @@ export function generateTailoredInquiryRecords(student: Student): InquiryActivit
         deliverables: 'Self-Attention 연산 Jupyter Notebook 코드, 수리 유도 리포트 (A4 5매)',
         status: 'reviewed',
         teacherFeedback: {
-          author: '강수진 교사 (진로진학부장 / 통합과학)',
+          author: '이창렬 교사 (지리·통합사회 / 인성여고)',
           date: '2026-05-28',
           academicCompetency: '소프트맥스 함수에서의 기울기 소실 원인을 행렬 분산의 관점에서 수리적으로 증명해낸 집요한 논리력이 매우 돋보임.',
           careerCompetency: '인공지능 핵심 논문의 수식을 회피하지 않고 직접 파이썬 코드로 구현하여 검증하는 예비 공학자로서의 실천력이 뛰어남.',
@@ -1294,7 +1294,7 @@ export function generateTailoredInquiryRecords(student: Student): InquiryActivit
         deliverables: '전기화학 수리 모델링 보고서 (A4 5매), 덴드라이트 억제 시뮬레이션 시트',
         status: 'reviewed',
         teacherFeedback: {
-          author: '강수진 교사 (진로진학부장 / 통합과학)',
+          author: '이창렬 교사 (지리·통합사회 / 인성여고)',
           date: '2026-05-22',
           academicCompetency: '화학Ⅰ 전기화학 개념을 물리학의 계면 저항과 결합하여 수리적으로 정식화한 다학제적 탐구력이 돋보임.',
           careerCompetency: '이차전지 및 신소재 분야의 핵심 난제를 회피하지 않고 논문 데이터로 정량 검증하는 연구 역량이 탁월함.',
@@ -1353,7 +1353,7 @@ export function generateTailoredInquiryRecords(student: Student): InquiryActivit
         deliverables: '익형 양항비 회귀분석 리포트 (A4 5매), 지오지브라 받음각 최적화 시트',
         status: 'reviewed',
         teacherFeedback: {
-          author: '강수진 교사 (진로진학부장)',
+          author: '이창렬 교사 (지리·통합사회 / 인성여고)',
           date: '2026-09-28',
           academicCompetency: '베르누이 방정식과 다항 회귀 미분을 접목하여 양항비 극대점을 정확히 산출해낸 뛰어난 수리적 해석 역량을 보임.',
           careerCompetency: '항공우주 및 기계공학 분야의 필수 도구인 공기역학 계수 데이터를 주도적으로 가공하는 전공 적합성이 우수함.',
@@ -1412,7 +1412,7 @@ export function generateTailoredInquiryRecords(student: Student): InquiryActivit
       deliverables: '최적 세율 수리 모델링 연구 보고서 (A4 5매), 비용편익 산출 스프레드시트',
       status: 'reviewed',
       teacherFeedback: {
-        author: '강수진 교사 (진로진학부장)',
+        author: '이창렬 교사 (지리·통합사회 / 인성여고)',
         date: '2026-05-26',
         academicCompetency: '경제학의 외부성 개념을 수학의 미분계수 및 한계 개념과 유기적으로 결합하여 모델링한 고차 사고력이 돋보임.',
         careerCompetency: `'${targetCareer}'에 필요한 정량적 통계 데이터 가공 능력과 정책적 통찰을 자기주도적으로 증명함.`,

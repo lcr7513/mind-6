@@ -13,6 +13,7 @@ import {
   Calendar,
   Layers,
   Search,
+  RefreshCw,
 } from 'lucide-react';
 
 interface CareerRoadmapProps {
@@ -20,7 +21,9 @@ interface CareerRoadmapProps {
   milestones: RoadmapMilestone[];
   onAddMilestone: (milestone: RoadmapMilestone) => void;
   onUpdateStatus: (id: string, newStatus: RoadmapMilestone['status']) => void;
-  onRegenerateRoadmap?: () => void;
+  onRegenerateRoadmap?: () => Promise<'gemini' | 'local' | void> | void;
+  isGeneratingRoadmap?: boolean;
+  roadmapSource?: 'gemini' | 'local';
   onOpenProfile?: () => void;
 }
 
@@ -30,6 +33,8 @@ export const CareerRoadmap: React.FC<CareerRoadmapProps> = ({
   onAddMilestone,
   onUpdateStatus,
   onRegenerateRoadmap,
+  isGeneratingRoadmap = false,
+  roadmapSource = 'local',
   onOpenProfile,
 }) => {
   const [selectedSemester, setSelectedSemester] = useState<string>('all');
@@ -37,6 +42,7 @@ export const CareerRoadmap: React.FC<CareerRoadmapProps> = ({
   const [viewMode, setViewMode] = useState<'timeline' | 'matrix'>('timeline');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [showRegenToast, setShowRegenToast] = useState<boolean>(false);
+  const [lastRegenSource, setLastRegenSource] = useState<'gemini' | 'local'>('gemini');
 
   // New milestone form state
   const [title, setTitle] = useState<string>('');
@@ -80,12 +86,12 @@ export const CareerRoadmap: React.FC<CareerRoadmapProps> = ({
     setDescription('');
   };
 
-  const handleTriggerRegenerate = () => {
-    if (onRegenerateRoadmap) {
-      onRegenerateRoadmap();
-      setShowRegenToast(true);
-      setTimeout(() => setShowRegenToast(false), 3500);
-    }
+  const handleTriggerRegenerate = async () => {
+    if (!onRegenerateRoadmap || isGeneratingRoadmap) return;
+    const src = await onRegenerateRoadmap();
+    setLastRegenSource(src === 'local' ? 'local' : 'gemini');
+    setShowRegenToast(true);
+    setTimeout(() => setShowRegenToast(false), 4500);
   };
 
   const getCategoryColor = (cat: RoadmapMilestone['category']) => {
@@ -134,6 +140,12 @@ export const CareerRoadmap: React.FC<CareerRoadmapProps> = ({
                 <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
                   맞춤형 진로 로드맵
                 </h1>
+                {roadmapSource === 'gemini' && (
+                  <span className="text-[11px] px-2.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-md font-extrabold flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-purple-600" />
+                    AI 실시간 맞춤 설계
+                  </span>
+                )}
                 <span className="text-xs px-2.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-md font-bold">
                   {student.name} ({student.grade} · {student.classNum})
                 </span>
@@ -199,19 +211,43 @@ export const CareerRoadmap: React.FC<CareerRoadmapProps> = ({
               <button
                 type="button"
                 onClick={handleTriggerRegenerate}
-                className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+                disabled={isGeneratingRoadmap}
+                className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span>내 진로·관심사에 맞춤 로드맵 자동 재구성</span>
+                {isGeneratingRoadmap ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                    <span>AI가 3개년 맞춤 로드맵 설계 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <span>AI 맞춤 로드맵 실시간 재구성</span>
+                  </>
+                )}
               </button>
             )}
           </div>
         </div>
 
-        {showRegenToast && (
+        {isGeneratingRoadmap && (
+          <div className="mt-4 p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-900 flex items-center gap-2.5">
+            <RefreshCw className="w-4 h-4 animate-spin text-indigo-600 shrink-0" />
+            <span>
+              <strong>Gemini AI</strong>가 <strong>'{student.targetCareer || '목표 진로'}'</strong> 및{' '}
+              <strong>"{student.mainInterestTopic || '핵심 관심사'}"</strong>에 맞추어 1학년~3학년 10대 학기별 맞춤 과제를 실시간 생성하고 있습니다...
+            </span>
+          </div>
+        )}
+
+        {showRegenToast && !isGeneratingRoadmap && (
           <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2 animate-fade-in">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>'{student.targetCareer}' 및 '{student.mainInterestTopic?.slice(0, 25)}...' 주제에 맞춰 3개년 학기별·영역별 로드맵이 성공적으로 동적 재구성되었습니다!</span>
+            <span>
+              {lastRegenSource === 'gemini'
+                ? `✨ Gemini AI가 '${student.targetCareer}' 및 '${student.mainInterestTopic?.slice(0, 25)}...' 주제에 맞춰 3개년 학기별·영역별 로드맵 10단계를 실시간 재설계했습니다!`
+                : `'${student.targetCareer}' 및 '${student.mainInterestTopic?.slice(0, 25)}...' 주제에 맞춰 3개년 학기별·영역별 로드맵이 재구성되었습니다.`}
+            </span>
           </div>
         )}
       </div>

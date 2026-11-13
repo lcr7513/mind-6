@@ -34,7 +34,7 @@ export const StudentCareerProfileModal: React.FC<StudentCareerProfileModalProps>
 }) => {
   const [name, setName] = useState<string>(student.name || '');
   const [grade, setGrade] = useState<string>(student.grade || '고등학교 2학년');
-  const [school, setSchool] = useState<string>(student.school || '한국과학예술고등학교');
+  const [school, setSchool] = useState<string>(student.school || '인성여자고등학교');
   const [targetCareer, setTargetCareer] = useState<string>(student.targetCareer || '');
   const [targetMajor, setTargetMajor] = useState<string>(student.targetMajor || '');
   const [mainInterestTopic, setMainInterestTopic] = useState<string>(
@@ -257,7 +257,7 @@ export const StudentCareerProfileModal: React.FC<StudentCareerProfileModalProps>
                   type="text"
                   value={school}
                   onChange={(e) => setSchool(e.target.value)}
-                  placeholder="예: 한국과학예술고"
+                  placeholder="예: 인성여자고등학교"
                   className="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
                 />
               </div>

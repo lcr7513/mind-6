@@ -65,6 +65,7 @@ interface AiTopicGeneratorProps {
   onApplyMindMap: (mindmap: MindMapNode) => void;
   onAddInquiryRecord: (topic: SubjectInquiryTopic) => void;
   onSwitchToWizard?: () => void;
+  onSwitchToRefinement?: () => void;
 }
 
 export const AiTopicGenerator: React.FC<AiTopicGeneratorProps> = ({
@@ -76,6 +77,7 @@ export const AiTopicGenerator: React.FC<AiTopicGeneratorProps> = ({
   onApplyMindMap,
   onAddInquiryRecord,
   onSwitchToWizard,
+  onSwitchToRefinement,
 }) => {
   const [interest, setInterest] = useState<string>(
     defaultInterest || '크리스퍼 유전자 가위와 난치병 치료 메커니즘'
@@ -430,17 +432,30 @@ export const AiTopicGenerator: React.FC<AiTopicGeneratorProps> = ({
               대학 입학사정관은 단순한 전공 지식 나열보다, <strong>'고등학교 정규 수업 시간에 배운 교과 개념을 자신의 진로 관심사와 융합하여 스스로 심화 탐구한 과정'</strong>을 가장 높이 평가합니다.
               자유롭게 관심 연구 주제를 입력하시면 각 교과목별 실천 과제와 직관적인 마인드맵을 즉시 구성합니다.
             </p>
-            {onSwitchToWizard && (
-              <button
-                type="button"
-                onClick={onSwitchToWizard}
-                className="flex items-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-2xl text-xs shadow-md shrink-0 transition-all"
-              >
-                <Lightbulb className="w-4 h-4 text-slate-950" />
-                <span>주제 잡기 어렵다면? 단원별 길잡이</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {onSwitchToRefinement && (
+                <button
+                  type="button"
+                  onClick={onSwitchToRefinement}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl text-xs shadow-md transition-all cursor-pointer"
+                >
+                  <Target className="w-4 h-4 text-emerald-200" />
+                  <span>질문 좁히기 3단계</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {onSwitchToWizard && (
+                <button
+                  type="button"
+                  onClick={onSwitchToWizard}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-2xl text-xs shadow-md transition-all cursor-pointer"
+                >
+                  <Lightbulb className="w-4 h-4 text-slate-950" />
+                  <span>단원별 길잡이</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -880,11 +895,32 @@ export const AiTopicGenerator: React.FC<AiTopicGeneratorProps> = ({
               {/* Grouped by Subject Sections */}
               <div className="space-y-6">
                 {(() => {
+                  const categoryOrder = ['math', 'science', 'social', 'korean', 'english', 'tech'] as const;
+                  const categoryLabels: Record<string, string> = {
+                    math: '수학 (미적분 · 확률과 통계 · 기하)',
+                    science: '과학 (물리학 · 화학 · 생명과학 · 지구과학)',
+                    social: '사회/윤리/경제 (통합사회 · 경제 · 정치와 법 · 윤리)',
+                    korean: '국어 (독서 · 화법과 작문 · 언어와 매체)',
+                    english: '영어 (영어Ⅰ·Ⅱ · 심화 영어 독해와 작문)',
+                    tech: '정보/AI (정보 · 인공지능 기초 · 프로그래밍)',
+                  };
+
                   const subjectMap = new Map<string, SubjectInquiryTopic[]>();
+                  categoryOrder.forEach((cat) => {
+                    const items = generatedSubjects.filter((t) => t.subjectCategory === cat);
+                    if (items.length > 0) {
+                      const basics = items.filter((t) => t.level !== 'advanced');
+                      const advs = items.filter((t) => t.level === 'advanced');
+                      subjectMap.set(categoryLabels[cat] || items[0].subject, [...basics, ...advs]);
+                    }
+                  });
+                  // Include any remaining uncategorized items if present
                   generatedSubjects.forEach((t) => {
-                    const list = subjectMap.get(t.subject) || [];
-                    list.push(t);
-                    subjectMap.set(t.subject, list);
+                    if (!categoryOrder.includes(t.subjectCategory as any)) {
+                      const list = subjectMap.get(t.subject) || [];
+                      list.push(t);
+                      subjectMap.set(t.subject, list);
+                    }
                   });
 
                   return Array.from(subjectMap.entries()).map(([subj, topics]) => {
